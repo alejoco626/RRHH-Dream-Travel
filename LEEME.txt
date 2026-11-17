@@ -1,0 +1,98 @@
+RRHH - Dream & Travel (app de escritorio)
+=========================================
+
+INSTALAR Y ABRIR
+  1. Instala Python 3.10 o superior (marca "Add Python to PATH").
+  2. En esta carpeta:   pip install -r requisitos.txt
+  3. Abrir:             python rrhh.py
+
+Los datos quedan en la carpeta "datos" (base rrhh.db, archivos subidos y documentos
+Word creados). Para respaldar todo, copia esa carpeta.
+
+SECCIONES  (cada una tiene el botón "+ Nuevo" arriba a la derecha)
+  Resumen          Pruebas y entrevistas de HOY y de MAÑANA, total de confirmados por
+                   venir, ATRASADOS sin confirmar (con su teléfono, y botones "Asistió"
+                   y "Abrir"), archivos pendientes y próximos cumpleaños.
+  Embudo           Personas que YA confirmaron asistencia: nombre, teléfono, etapa
+                   (prueba de habilidades, psicométricas o entrevista), fecha y hora.
+                   "Mover a la siguiente etapa" las avanza; "Descartar candidato" las
+                   pasa a No aprobados (con motivo opcional). "Marcar recibido" confirma
+                   que sí se presentó; una cita con fecha pasada y sin confirmar se
+                   marca como ATRASADA (rojo en la lista y aviso en el menú).
+                   Al guardar el resultado de una prueba o entrevista, la cita queda
+                   recibida automáticamente.
+                   "Registrar resultado" abre Pruebas o Entrevistas con el candidato,
+                   la fecha y sus archivos ya cargados.
+  Ranking          Muestra al mejor candidato de cada plaza (Asistencia al viajero, Diseñador
+                   de viajes, Reservas, Recursos Humanos, Control de Calidad) según la nota de
+                   la prueba de habilidades. Pulsa una plaza o usa el filtro para ver solo sus
+                   candidatos; puedes incluir a los no aprobados y exportar a Excel. La plaza se
+                   elige en el Embudo, en la ficha y en las entrevistas.
+  No aprobados     Candidatos que no continúan; "Reactivar" los regresa al embudo.
+  Pruebas          Solo la tabla, sin formulario lateral. Toda prueba nueva se crea con
+                   "+ Prueba de habilidades", que abre la FICHA DE EVALUACIÓN: 6 secciones
+                   (CV, ventas, llamada, simulación, Bitrix24, Excel) con sus criterios,
+                   nota de 0 a 5 (Excel y globales 0 a 10), porcentaje por sección y la
+                   nota final, que es el promedio. La ficha tiene dos fechas: "Fecha de evaluación" (la agendada;
+                   avisa si está cerca, es hoy/mañana o está atrasada N días) y "Fecha de la
+                   prueba" (cuando la hizo; se llena sola con hoy al guardar notas). Enter o las flechas pasan a la casilla
+                   siguiente, la nota no puede pasar del máximo y el "/ 5" ya viene puesto.
+                   Los CV y Excel se suben al final de la ficha. Doble clic o "Abrir /
+                   editar" reabre la prueba; también hay "Pasar a entrevista", "Descartar
+                   candidato" y "Eliminar". "+ Psicométrica" pide nombre y puntaje.
+                   Importa desde Excel/JSON/CSV (botón "Importar pruebas"). Hay una
+                   plantilla de ejemplo en "Plantilla de importación".
+  Entrevistas      Nombre completo, teléfono, fecha y hora (obligatorios) + resultado.
+  Empleados        Obligatorio: nombre, puesto y departamento. Lo demás es opcional.
+  Amonestaciones   Registro + carta en Word + PDF firmado y escaneado.
+  Vacaciones       Registro + solicitud y constancia de goce (dos Word) + los dos PDF
+                   firmados y escaneados por separado.
+  Memorándums      Registro y PDF firmado (aún no genera el memo en Word).
+  Vista previa     Abre cualquier Word creado, edita el texto y guarda.
+  Pendientes       Registros a los que les falta subir su PDF.
+
+AUTORIZA VACACIONES (se sugiere según el grupo del empleado; se puede cambiar)
+  Supervisiones y Personal administrativo: Jackeline / Magdalena
+  Ventas Senior: Debi    Ventas Junior: Jackeline    Reservas: Karla
+  Asistencia al viajero y visas: Melanie
+  Procesos y control de calidad / Recursos humanos: Jackeline
+
+CONVERTIR LA PLANILLA DE CANDIDATOS (Excel) A JSON
+  python herramientas\exportar_candidatos.py PLANILLA.xlsx salida.json
+  Solo toma las hojas con nombre de persona (ignora "Matriz").
+
+CREAR .EXE
+  pip install pyinstaller   y luego   empaquetar.bat
+  El RRHH.exe sale con el ícono de la app (plantillas\icono.ico). Para cambiarlo,
+  reemplaza ese archivo y vuelve a empaquetar.
+
+PRUEBAS AUTOMÁTICAS
+  python pruebas_logica.py
+
+VACACIONES
+  Escribe el primer día y los días de goce (ej. 10.5): se calcula el último día y la fecha
+  de regreso. O escribe el último día, o la fecha de regreso, y se calculan los días.
+  Lunes a viernes cuentan 1, sábado 0.5 y domingo 0. El folio se puede editar (vacío =
+  automático; no se permiten folios repetidos).
+
+CONFIGURACIÓN
+  Todo lo que antes estaba fijo se edita desde "Configuración" (menú Sistema), sin tocar
+  el código: plazas, departamentos, grupos de autorización y quién autoriza, temas de
+  memorándum, tipos de archivo, nombre de la empresa / área / ciudad de los documentos,
+  días de aviso de cumpleaños, la escala y los criterios de la ficha de evaluación.
+  Se guarda en la base de datos. "Restablecer valores originales" regresa a los iniciales.
+  Al renombrar una plaza, departamento, grupo, tema o tipo de archivo, los registros que
+  ya lo usaban se actualizan. Las etapas del embudo (Prueba de habilidades, Pruebas
+  psicométricas, Entrevista) y los estados de asistencia son parte del funcionamiento y
+  no se editan.
+
+ARCHIVOS MÚLTIPLES
+  Embudo, Pruebas y Entrevistas aceptan varios archivos a la vez (PDF, Word y Excel):
+  elige el tipo (CV, Prueba de Excel u Otro) y pulsa "Agregar archivos".
+
+SI UN BOTÓN FALLA
+  Ahora se muestra el error en pantalla y se guarda en datos\errores.txt.
+
+TECLADO
+  Enter pasa a la casilla siguiente en todos los formularios (en las cajas de texto
+  largo crea una línea nueva). Las fechas ponen las diagonales solas: escribe 19112026.
