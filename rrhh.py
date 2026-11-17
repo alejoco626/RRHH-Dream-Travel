@@ -125,7 +125,8 @@ class Aplicacion(tk.Tk):
                            ("ranking", "Ranking de candidatos"),
                            ("no_aprobados", "No aprobados"))),
             ("Personal", (("empleados", "Empleados"), ("amonestaciones", "Amonestaciones"),
-                          ("vacaciones", "Vacaciones"), ("memos", "Memorándums"))),
+                          ("vacaciones", "Vacaciones"), ("memos", "Memorándums"),
+                          ("ausencias", "Embudo de ausencias"))),
             ("Documentos", (("documentos", "Vista previa"),
                             ("pendientes", "Pendientes de completar"))),
             ("Sistema", (("configuracion", "Configuración"),)),
@@ -216,6 +217,10 @@ class Aplicacion(tk.Tk):
             ("memos", modulos.ModuloCrud(
                 self.contenido, self, "memos", "Memorándums",
                 "Políticas internas firmadas por cada empleado")),
+            ("ausencias", modulos.ModuloCrud(
+                self.contenido, self, "ausencias", "Embudo de ausencias",
+                "Faltas, permisos e incapacidades de los empleados, desde que se reportan hasta su cierre",
+                acciones=[("Siguiente etapa", modulos.accion_avanzar_ausencia)])),
             ("documentos", modulos.PaginaDocumentos(self.contenido, self)),
             ("pendientes", modulos.Pendientes(self.contenido, self)),
         )

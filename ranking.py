@@ -2,6 +2,8 @@ import re
 
 PLAZAS = ["Asistencia al viajero", "Diseñador de viajes", "Reservas", "Recursos Humanos",
           "Control de Calidad"]
+PUESTOS = ["Asesor de ventas", "Agente de reservas", "Gestor de visas",
+           "Asistente al viajero", "Analista de calidad", "Reclutador"]
 SIN_PLAZA = "Sin plaza"
 
 

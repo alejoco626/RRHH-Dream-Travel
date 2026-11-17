@@ -6,8 +6,11 @@ from datetime import date, datetime
 from tkinter import filedialog, messagebox, simpledialog
 
 import agenda
+import ausencias
+import informes
 import base_datos as bd
 import configuracion
+import dialogo_informe
 import documentos
 import dialogo_importar
 import importador
@@ -48,7 +51,7 @@ def campo(clave, etiqueta, tipo="texto", req=False, opciones=None, completo=Fals
 CAMPOS = {
     "empleados": [
         campo("nombre_completo", "Nombre completo", req=True, completo=True),
-        campo("puesto", "Puesto", req=True),
+        campo("puesto", "Puesto", "opcion", True, ranking.PUESTOS),
         campo("departamento", "Departamento", "opcion", True, DEPARTAMENTOS),
         campo("fecha_ingreso", "Fecha de ingreso (dd/mm/aaaa)", "fecha"),
         campo("fecha_cumpleanos", "Fecha de cumpleaños (dd/mm/aaaa)", "fecha"),
@@ -136,6 +139,16 @@ CAMPOS = {
         campo("observaciones", "Observaciones", "largo"),
         campo("archivo", "Memo firmado y escaneado (PDF)", "archivo", pdf=True),
     ],
+    "ausencias": [
+        campo("empleado_id", "Empleado", "empleado", True, completo=True),
+        campo("tipo", "Tipo de ausencia", "opcion", True, ausencias.TIPOS),
+        campo("etapa", "Etapa del embudo", "opcion", True, ausencias.ETAPAS),
+        campo("fecha", "Primer día (dd/mm/aaaa)", "fecha", True),
+        campo("fecha_fin", "Último día (vacío si fue un solo día)", "fecha"),
+        campo("fecha_cierre", "Fecha de cierre (dd/mm/aaaa)", "fecha"),
+        campo("motivo", "Motivo o detalle", "largo"),
+        campo("archivo", "Justificante (PDF)", "archivo", pdf=True),
+    ],
 }
 
 COLUMNAS = {
@@ -157,6 +170,9 @@ COLUMNAS = {
                    ("archivo_constancia", "Constancia", 90)],
     "memos": [("empleado", "Empleado", 190), ("fecha", "Fecha", 90), ("tema", "Tema", 260),
               ("archivo", "Comprobante", 100)],
+    "ausencias": [("empleado", "Empleado", 170), ("tipo", "Tipo", 130), ("fecha", "Desde", 90),
+                  ("dias", "Días", 50), ("etapa", "Etapa", 140),
+                  ("archivo", "Justificante", 90)],
     "embudo": [("nombre_completo", "Nombre", 180), ("telefono", "Teléfono", 100),
                ("plaza", "Plaza", 140), ("etapa", "Etapa", 140), ("fecha", "Fecha", 85), ("hora", "Hora", 75),
                ("situacion", "Situación", 85), ("adjuntos", "Archivos", 85)],
@@ -209,6 +225,9 @@ class Pagina(Marco):
         pass
 
 
+PERSONAL = ("empleados", "amonestaciones", "vacaciones", "memos", "ausencias")
+
+
 class ModuloCrud(Pagina):
     def __init__(self, master, app, tabla, titulo, subtitulo, acciones=None,
                  acciones_cabecera=None, clave=None, estado=None, boton_nuevo=True,
@@ -222,6 +241,8 @@ class ModuloCrud(Pagina):
         self.vars, self.textos, self.filas, self.archivos = {}, {}, {}, {}
         self.combos, self.adjuntos, self._arbol_adj = {}, [], None
         self.empleados = []
+        self.personas = []
+        self.filtro_persona = None
         self.combo_empleado = None
         self.combo_autoriza = None
         self.combo_categoria = None
@@ -232,6 +253,9 @@ class ModuloCrud(Pagina):
         if boton_nuevo:
             Boton(self.zona_acciones, "+ Nuevo", self._pulsar_nuevo, fondo="app").pack(
                 side="left", padx=(10, 0))
+        if self.tabla in PERSONAL:
+            Boton(self.zona_acciones, "Ver informes", self.ver_informes, tipo="secundario",
+                  fondo="app").pack(side="left", padx=(10, 0))
         for texto, funcion, tipo in (acciones_cabecera or []):
             Boton(self.zona_acciones, texto, lambda f=funcion: f(self), tipo=tipo,
                   fondo="app").pack(side="left", padx=(10, 0))
@@ -246,6 +270,8 @@ class ModuloCrud(Pagina):
             self.vars["etapa"].set(ETAPAS[0])
             if "asistencia" in self.vars:
                 self.vars["asistencia"].set(agenda.ASISTENCIAS[0])
+        if self.tabla == "ausencias":
+            self.vars["etapa"].set(ausencias.ETAPAS[0])
         if self.tabla == "pruebas":
             self.arbol.bind("<Double-1>", lambda e: accion_abrir_prueba(self))
         if self.tabla == "entrevistas":
@@ -262,10 +288,28 @@ class ModuloCrud(Pagina):
         barra.columnconfigure(0, weight=1)
         self.buscador = CampoBusqueda(barra, "Buscar por referencia", self.refrescar)
         self.buscador.grid(row=0, column=0, sticky="ew")
+        columna_total = 1
+        if self.tabla in PERSONAL:
+            self.v_persona = tk.StringVar(value=informes.TODAS)
+            self.combo_persona = Combo(barra, [informes.TODAS], solo_lectura=True, ancho=26)
+            self.combo_persona.configure(textvariable=self.v_persona)
+            self.combo_persona.grid(row=0, column=1, padx=(10, 0))
+            self.combo_persona.bind("<<ComboboxSelected>>", lambda e: self._elegir_persona())
+            self.boton_informe_persona = Boton(barra, "Ver informes de esta persona",
+                                               self.ver_informes, tipo="primario", alto=32,
+                                               fuente=tema.F_PEQ_NEG)
+            columna_total = 3
         self.etiqueta_total = Etiqueta(barra, "", tono="sec")
-        self.etiqueta_total.grid(row=0, column=1, padx=(14, 0))
+        self.etiqueta_total.grid(row=0, column=columna_total, padx=(14, 0))
+        fila_tabla = 1
+        if self.tabla == "ausencias":
+            self.filtro_etapa = None
+            self._crear_franja_ausencias(tarjeta)
+            fila_tabla = 2
+            tarjeta.rowconfigure(1, weight=0)
+            tarjeta.rowconfigure(2, weight=1)
         cont, self.arbol = crear_tabla(tarjeta, self.columnas)
-        cont.grid(row=1, column=0, sticky="nsew", padx=(12, 4), pady=(0, 12))
+        cont.grid(row=fila_tabla, column=0, sticky="nsew", padx=(12, 4), pady=(0, 12))
         self.arbol.bind("<<TreeviewSelect>>", self._al_seleccionar)
         if not self.formulario:
             Separador(tarjeta).grid(row=2, column=0, sticky="ew")
@@ -274,6 +318,51 @@ class ModuloCrud(Pagina):
             for texto, funcion, tipo in self.acciones:
                 Boton(pie, texto, lambda f=funcion: f(self), tipo=tipo).pack(
                     side="left", padx=(0, 8))
+
+    def _elegir_persona(self):
+        nombre = self.v_persona.get()
+        self.filtro_persona = next((i for i, n in self.personas if n == nombre), None)
+        if self.filtro_persona is None:
+            self.boton_informe_persona.grid_remove()
+        else:
+            self.boton_informe_persona.grid(row=0, column=2, padx=(10, 0))
+        self.refrescar()
+
+    def ver_informes(self):
+        dialogo_informe.DialogoInforme(self.app, self.tabla, self.filtro_persona)
+
+    def _crear_franja_ausencias(self, tarjeta):
+        self.franja = Marco(tarjeta, fondo="tarjeta")
+        self.franja.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        self.fichas_ausencia = []
+
+    def _pintar_franja_ausencias(self, datos):
+        for f in self.franja.winfo_children():
+            f.destroy()
+        etapas = datos["etapas"]
+        mayor = max([n for _, n in etapas] + [1])
+        for i, (etapa, n) in enumerate(etapas):
+            self.franja.columnconfigure(i, weight=1, uniform="etapa_ausencia")
+            ficha = Marco(self.franja, fondo="sel" if self.filtro_etapa == etapa else "zebra",
+                          borde=True)
+            ficha.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0))
+            fondo = "sel" if self.filtro_etapa == etapa else "zebra"
+            cifra = Etiqueta(ficha, str(n), fondo=fondo, fuente=tema.F_SUB, anchor="center")
+            cifra.pack(fill="x", pady=(8, 0))
+            nombre = Etiqueta(ficha, etapa, fondo=fondo, tono="sec", fuente=tema.F_PEQ,
+                              anchor="center")
+            nombre.pack(fill="x", padx=4)
+            pista = Marco(ficha, fondo="borde", height=5)
+            pista.pack(fill="x", padx=10, pady=(6, 8))
+            relleno = Marco(pista, fondo="primario")
+            relleno.place(x=0, y=0, relheight=1, relwidth=n / mayor)
+            for w in (ficha, cifra, nombre, pista):
+                w.bind("<Button-1>", lambda e, et=etapa: self._filtrar_etapa(et))
+                w.configure(cursor="hand2")
+
+    def _filtrar_etapa(self, etapa):
+        self.filtro_etapa = None if self.filtro_etapa == etapa else etapa
+        self.refrescar()
 
     def _crear_formulario(self):
         tarjeta = Marco(self.cuerpo, fondo="tarjeta", borde=True)
@@ -484,6 +573,13 @@ class ModuloCrud(Pagina):
         if self.combo_empleado is not None:
             self.empleados = bd.empleados_basico()
             self.combo_empleado.configure(values=[f"{i} - {n}" for i, n in self.empleados])
+        if self.tabla in PERSONAL:
+            self.personas = bd.empleados_basico()
+            self.combo_persona.configure(values=[informes.TODAS] + [n for _, n in self.personas])
+            if self.filtro_persona is not None and self.filtro_persona not in dict(self.personas):
+                self.filtro_persona = None
+                self.v_persona.set(informes.TODAS)
+                self.boton_informe_persona.grid_remove()
         if "candidato" in self.combos:
             nombres = sorted({r["nombre_completo"] for r in bd.listar("embudo")})
             self.combos["candidato"].configure(values=nombres)
@@ -499,6 +595,13 @@ class ModuloCrud(Pagina):
             conteos = bd.conteo_adjuntos(self.tabla)
             for r in registros:
                 r["adjuntos"] = conteos.get(r["id"], 0)
+        if self.filtro_persona is not None:
+            clave = "id" if self.tabla == "empleados" else "empleado_id"
+            registros = [r for r in registros if r.get(clave) == self.filtro_persona]
+        if self.tabla == "ausencias":
+            self._pintar_franja_ausencias(ausencias.embudo(registros))
+            if self.filtro_etapa:
+                registros = [r for r in registros if r.get("etapa") == self.filtro_etapa]
         if self.estado:
             registros = [r for r in registros if r.get("estado") == self.estado]
         if any(c[0] == "situacion" for c in self.columnas):
@@ -521,6 +624,11 @@ class ModuloCrud(Pagina):
             por_etapa = [f"{sum(1 for f in self.filas.values() if f['etapa'] == e)} {c}"
                          for e, c in zip(ETAPAS, ("habilidades", "psicométricas", "entrevista"))]
             self.etiqueta_total.configure(text=f"{total} en el embudo  ·  " + "  ·  ".join(por_etapa))
+        elif self.tabla == "ausencias":
+            texto = f"{total} registro{'s' if total != 1 else ''}"
+            if self.filtro_etapa:
+                texto += f"  ·  filtrado: {self.filtro_etapa} (clic de nuevo para quitar)"
+            self.etiqueta_total.configure(text=texto)
         else:
             self.etiqueta_total.configure(text=f"{total} registro{'s' if total != 1 else ''}")
         if self.id_actual in self.filas:
@@ -603,6 +711,8 @@ class ModuloCrud(Pagina):
             self.vars["numero_vez"].set("1")
         if self.tabla == "memos":
             self.vars["emisor"].set(bd.leer_config("ultimo_emisor_memo", ""))
+        if self.tabla == "ausencias":
+            self.vars["etapa"].set(ausencias.ETAPAS[0])
         if self.tabla == "embudo":
             self.vars["etapa"].set(ETAPAS[0])
             if "asistencia" in self.vars:
@@ -634,6 +744,13 @@ class ModuloCrud(Pagina):
             elif k == "numero_vez":
                 v = int(v)
             datos[k] = v if v not in ("", None) else None
+        if self.tabla == "ausencias":
+            dias = ausencias.dias_de(datos["fecha"], datos.get("fecha_fin"))
+            if dias is None:
+                raise ValueError("El último día es anterior al primero.")
+            datos["dias"] = dias
+            if datos.get("fecha_cierre") and datos["fecha_cierre"] < datos["fecha"]:
+                raise ValueError("La fecha de cierre es anterior a la ausencia.")
         if self.tabla == "vacaciones":
             if datos["fecha_fin"] < datos["fecha_inicio"]:
                 raise ValueError("El último día de goce es anterior al primero.")
@@ -860,6 +977,22 @@ def accion_mover_etapa(m):
     m.refrescar()
     m.cargar(bd.obtener("embudo", m.id_actual))
     m.app.avisar_cambio(f"Pasó a {siguiente}. Escribe la fecha y la hora de esta etapa.", "info")
+
+
+def accion_avanzar_ausencia(m):
+    if m.id_actual is None:
+        messagebox.showinfo("Ausencias", "Selecciona primero la ausencia en la lista.")
+        return
+    actual = m.vars["etapa"].get()
+    if actual == ausencias.ETAPAS[-1]:
+        messagebox.showinfo("Ausencias", "Esta ausencia ya está en la última etapa.")
+        return
+    nueva = ausencias.siguiente(actual)
+    m.vars["etapa"].set(nueva)
+    if nueva == ausencias.ETAPAS[-1] and not m.vars["fecha_cierre"].get().strip():
+        m.vars["fecha_cierre"].set(logica.formatear(date.today().isoformat()))
+    if m.guardar():
+        m.app.avisar_cambio(f"Pasó a {nueva}.", "info")
 
 
 def accion_marcar_recibido(m):

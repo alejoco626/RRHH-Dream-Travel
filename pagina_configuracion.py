@@ -2,12 +2,13 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 import base_datos as bd
+import ausencias
 import configuracion
 import evaluacion
 import logica
 import ranking
 import tema
-from componentes import (Boton, CajaTexto, Etiqueta, Marco, ZonaDesplazable, crear_tabla,
+from componentes import (Boton, CajaTexto, Combo, Etiqueta, Marco, ZonaDesplazable, crear_tabla,
                          podar, registrar)
 from modulos import Pagina
 
@@ -122,6 +123,36 @@ class EditorLista(Tarjeta):
             return
         self.lista[i], self.lista[i + delta] = self.lista[i + delta], self.lista[i]
         self._guardar(i + delta)
+
+
+class EditorPlazasPuestos(EditorLista):
+    TIPOS = ("Plazas disponibles", "Puestos")
+
+    def __init__(self, master, pagina):
+        super().__init__(
+            master, pagina, "Plazas y Puestos",
+            "Plazas disponibles: vacantes a las que aplican los candidatos (Embudo, ficha, "
+            "entrevistas y Ranking). Puestos: cargos de los empleados. Elige cuál editar.",
+            ranking.PLAZAS, ranking_renombrar)
+        for w in self.cuerpo.winfo_children():
+            w.grid_configure(row=int(w.grid_info()["row"]) + 1)
+        fila = Marco(self.cuerpo, fondo="tarjeta")
+        fila.grid(row=0, column=0, sticky="w", pady=(0, 8))
+        Etiqueta(fila, "Editar:", tono="sec").pack(side="left", padx=(0, 8))
+        self.v_tipo = tk.StringVar(value=self.TIPOS[0])
+        self.combo = Combo(fila, self.TIPOS, solo_lectura=True, ancho=20)
+        self.combo.configure(textvariable=self.v_tipo)
+        self.combo.pack(side="left")
+        self.combo.bind("<<ComboboxSelected>>", lambda e: self.cambiar_tipo())
+
+    def cambiar_tipo(self):
+        if self.v_tipo.get() == self.TIPOS[1]:
+            self.lista = ranking.PUESTOS
+            self._renombrar = lambda v, n: bd.renombrar_valor("empleados", "puesto", v, n)
+        else:
+            self.lista = ranking.PLAZAS
+            self._renombrar = ranking_renombrar
+        self.pintar()
 
 
 class EditorGrupos(Tarjeta):
@@ -381,9 +412,7 @@ class PaginaConfiguracion(Pagina):
         rejilla = zona.interior
         rejilla.columnconfigure((0, 1), weight=1, uniform="cfg")
         self.editores = [
-            EditorLista(rejilla, self, "Plazas", "Plazas a las que aplican los candidatos; "
-                        "se usan en el Embudo, la ficha, las entrevistas y el Ranking.",
-                        ranking.PLAZAS, ranking_renombrar),
+            EditorPlazasPuestos(rejilla, self),
             EditorLista(rejilla, self, "Departamentos", "Departamentos de los empleados.",
                         configuracion.DEPARTAMENTOS,
                         lambda v, n: bd.renombrar_valor("empleados", "departamento", v, n)),
@@ -391,6 +420,13 @@ class PaginaConfiguracion(Pagina):
             EditorLista(rejilla, self, "Temas de memorándum", "Políticas que firman los empleados.",
                         configuracion.TEMAS_MEMO,
                         lambda v, n: bd.renombrar_valor("memos", "tema", v, n)),
+            EditorLista(rejilla, self, "Tipos de ausencia", "Clases de ausencia que se pueden "
+                        "registrar a un empleado.", ausencias.TIPOS,
+                        lambda v, n: bd.renombrar_valor("ausencias", "tipo", v, n)),
+            EditorLista(rejilla, self, "Etapas del embudo de ausencias", "Recorrido de cada "
+                        "ausencia, en orden; la última etapa se considera cerrada.",
+                        ausencias.ETAPAS,
+                        lambda v, n: bd.renombrar_valor("ausencias", "etapa", v, n)),
             EditorLista(rejilla, self, "Tipos de archivo", "Clasificación de los archivos que se "
                         "suben a candidatos (CV, Excel…).", bd.CATEGORIAS_ADJUNTO,
                         lambda v, n: bd.renombrar_valor("adjuntos", "categoria", v, n)),

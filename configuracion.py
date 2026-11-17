@@ -3,6 +3,7 @@ import json
 
 import base_datos as bd
 import documentos
+import ausencias
 import evaluacion
 import logica
 import ranking
@@ -19,6 +20,9 @@ CLAVE = "configuracion"
 def _estado():
     return {
         "plazas": list(ranking.PLAZAS),
+        "puestos": list(ranking.PUESTOS),
+        "tipos_ausencia": list(ausencias.TIPOS),
+        "etapas_ausencia": list(ausencias.ETAPAS),
         "departamentos": list(DEPARTAMENTOS),
         "temas_memo": list(TEMAS_MEMO),
         "categorias_adjunto": list(bd.CATEGORIAS_ADJUNTO),
@@ -62,7 +66,9 @@ def _secciones(valor):
 
 
 def aplicar(datos):
-    for clave, destino in (("plazas", ranking.PLAZAS), ("departamentos", DEPARTAMENTOS),
+    for clave, destino in (("plazas", ranking.PLAZAS), ("puestos", ranking.PUESTOS), ("tipos_ausencia", ausencias.TIPOS),
+                           ("etapas_ausencia", ausencias.ETAPAS),
+                           ("departamentos", DEPARTAMENTOS),
                            ("temas_memo", TEMAS_MEMO),
                            ("categorias_adjunto", bd.CATEGORIAS_ADJUNTO)):
         lista = _lista(datos.get(clave))

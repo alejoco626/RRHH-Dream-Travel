@@ -6,6 +6,7 @@ from datetime import date
 os.environ["RRHH_DATOS"] = tempfile.mkdtemp()
 
 import base_datos as bd
+import configuracion
 import agenda
 import documentos
 import evaluacion as ev
@@ -671,6 +672,97 @@ class PruebasActualizador(unittest.TestCase):
         t = a.texto_script(r"C:\App\RRHH.exe", r"C:\App\RRHH_nuevo.exe", 1)
         self.assertIn('move /y "C:\\App\\RRHH_nuevo.exe" "C:\\App\\RRHH.exe"', t)
         self.assertIn('start "" "C:\\App\\RRHH.exe"', t)
+
+
+class PruebasAusenciasYPuestos(unittest.TestCase):
+    def test_dias_y_embudo(self):
+        import ausencias as a
+        self.assertEqual(a.dias_de("2026-11-16", None), 1)
+        self.assertEqual(a.dias_de("2026-11-16", "2026-11-18"), 3)
+        self.assertIsNone(a.dias_de("2026-11-18", "2026-11-16"))
+        datos = a.embudo([{"etapa": "Reportada"}, {"etapa": "Reportada"}, {"etapa": "Cerrada"},
+                          {"etapa": "Otra"}])
+        self.assertEqual(dict(datos["etapas"])["Reportada"], 2)
+        self.assertEqual((datos["total"], datos["abiertas"]), (4, 3))
+        self.assertEqual(a.siguiente("Reportada"), a.ETAPAS[1])
+        self.assertEqual(a.siguiente(a.ETAPAS[-1]), a.ETAPAS[-1])
+
+    def test_guardar_ausencia_y_listar_con_empleado(self):
+        with tempfile.TemporaryDirectory() as t:
+            bd.RUTA_DB = os.path.join(t, "x.db")
+            bd.CARPETA_ARCHIVOS = os.path.join(t, "a")
+            bd.crear_tablas()
+            e = bd.guardar("empleados", {"nombre_completo": "Ana Pérez", "puesto": "Agente",
+                                         "departamento": "Ventas"})
+            bd.guardar("ausencias", {"empleado_id": e, "tipo": "Falta", "fecha": "2026-11-16",
+                                     "dias": 1, "etapa": "Reportada"})
+            filas = bd.listar("ausencias")
+            self.assertEqual((filas[0]["empleado"], filas[0]["etapa"]), ("Ana Pérez", "Reportada"))
+            bd.renombrar_valor("ausencias", "etapa", "Reportada", "Nueva")
+            self.assertEqual(bd.listar("ausencias")[0]["etapa"], "Nueva")
+
+    def test_puestos_y_etapas_se_guardan_en_configuracion(self):
+        import ausencias as a
+        import ranking as r
+        antes = (list(r.PUESTOS), list(a.ETAPAS), list(a.TIPOS))
+        try:
+            configuracion.aplicar({"puestos": ["Chofer"], "etapas_ausencia": ["A", "B"],
+                                   "tipos_ausencia": ["Falta"]})
+            self.assertEqual((r.PUESTOS, a.ETAPAS, a.TIPOS), (["Chofer"], ["A", "B"], ["Falta"]))
+            self.assertEqual(configuracion._estado()["puestos"], ["Chofer"])
+        finally:
+            r.PUESTOS[:], a.ETAPAS[:], a.TIPOS[:] = antes
+
+
+class PruebasInformes(unittest.TestCase):
+    def _bd(self, t):
+        bd.RUTA_DB = os.path.join(t, "x.db")
+        bd.CARPETA_ARCHIVOS = os.path.join(t, "a")
+        bd.crear_tablas()
+        a = bd.guardar("empleados", {"nombre_completo": "Ana", "puesto": "P", "departamento": "D"})
+        b = bd.guardar("empleados", {"nombre_completo": "Luis", "puesto": "P", "departamento": "D"})
+        for e, ini in ((a, "2026-11-02"), (b, "2026-12-01")):
+            bd.guardar("vacaciones", {"empleado_id": e, "folio": ini, "fecha_solicitud": ini,
+                                      "fecha_inicio": ini, "fecha_fin": ini, "dias": 1,
+                                      "periodo_desde": ini, "periodo_hasta": ini})
+        bd.guardar("amonestaciones", {"empleado_id": a, "fecha": "2026-09-10", "numero_vez": 1,
+                                      "falta": "Tarde"})
+        return a, b
+
+    def test_filtros_por_persona_y_fechas(self):
+        import informes as i
+        with tempfile.TemporaryDirectory() as t:
+            a, b = self._bd(t)
+            self.assertEqual(len(i.construir("vacaciones")[2]), 2)
+            self.assertEqual(len(i.construir("vacaciones", a)[2]), 1)
+            self.assertEqual(len(i.construir("vacaciones", None, "2026-11-15")[2]), 1)
+            self.assertEqual(len(i.construir("vacaciones", None, None, "2026-11-15")[2]), 1)
+            self.assertEqual(len(i.construir("amonestaciones")[2]), 1)
+            titulo, cols, filas = i.construir("empleados", a)
+            self.assertEqual({f[0] for f in filas}, {"Vacaciones", "Amonestación"})
+            self.assertEqual(len(i.construir("empleados")[2]), 3)
+
+    def test_exportar_e_imagen(self):
+        import informes as i
+        with tempfile.TemporaryDirectory() as t:
+            self._bd(t)
+            titulo, cols, filas = i.construir("empleados")
+            ruta = os.path.join(t, "r.xlsx")
+            i.exportar_xlsx(ruta, titulo, cols, filas)
+            from openpyxl import load_workbook
+            hoja = load_workbook(ruta).active
+            self.assertEqual(hoja.max_row, len(filas) + 1)
+            self.assertEqual(hoja["A1"].value, "Tipo")
+            img = i.imagen_tabla(titulo, i.subtitulo(None, None, None, len(filas)), cols, filas)
+            vacia = i.imagen_tabla(titulo, "x", cols, [])
+            self.assertGreater(img.size[1], vacia.size[1])
+            muchas = i.imagen_tabla(titulo, "x", cols, filas * 40)
+            self.assertGreater(muchas.size[1], img.size[1] * 10)
+
+    def test_subtitulo(self):
+        import informes as i
+        self.assertEqual(i.subtitulo(None, None, None, 1), "Todas las personas  ·  1 registro")
+        self.assertIn("del 01/11/2026 al hoy", i.subtitulo("Ana", "2026-11-01", None, 3))
 
 
 if __name__ == "__main__":

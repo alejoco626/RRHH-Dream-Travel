@@ -61,6 +61,13 @@ CONVERTIR LA PLANILLA DE CANDIDATOS (Excel) A JSON
   python herramientas\exportar_candidatos.py PLANILLA.xlsx salida.json
   Solo toma las hojas con nombre de persona (ignora "Matriz").
 
+INSTALADOR
+  Descarga RRHH-Instalador.exe de Releases y ejecútalo (sin permisos de administrador).
+  Instala en tu usuario, crea los accesos directos y aparece en "Aplicaciones instaladas".
+  Los datos van a %LOCALAPPDATA%\RRHH Dream & Travel\datos y se conservan al actualizar o
+  desinstalar. Si venías usando RRHH.exe portable, copia su carpeta "datos" a esa ruta.
+  El .exe portable sigue disponible; si junto a él existe la carpeta "datos", la usa.
+
 ACTUALIZACIÓN AUTOMÁTICA
   Al abrir (y con el botón "Buscar actualizaciones" del menú) la app consulta la última
   versión publicada en GitHub Releases. Si hay una nueva, pregunta, la descarga, la verifica

@@ -12,7 +12,17 @@ def _carpeta_base():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CARPETA_DATOS = os.environ.get("RRHH_DATOS") or os.path.join(_carpeta_base(), "datos")
+def _carpeta_datos():
+    if os.environ.get("RRHH_DATOS"):
+        return os.environ["RRHH_DATOS"]
+    junto = os.path.join(_carpeta_base(), "datos")
+    if getattr(sys, "frozen", False) and sys.platform == "win32" and not os.path.isdir(junto):
+        raiz = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(raiz, "RRHH Dream & Travel", "datos")
+    return junto
+
+
+CARPETA_DATOS = _carpeta_datos()
 CARPETA_ARCHIVOS = os.path.join(CARPETA_DATOS, "archivos")
 RUTA_DB = os.path.join(CARPETA_DATOS, "rrhh.db")
 
@@ -30,11 +40,13 @@ COLUMNAS = {
                    "autoriza", "fecha_constancia", "observaciones",
                    "archivo_solicitud", "archivo_constancia"],
     "memos": ["empleado_id", "fecha", "tema", "emisor", "observaciones", "archivo"],
+    "ausencias": ["empleado_id", "tipo", "fecha", "fecha_fin", "dias", "motivo", "etapa",
+                  "fecha_cierre", "archivo"],
     "embudo": ["nombre_completo", "telefono", "plaza", "etapa", "fecha", "hora", "estado",
                "motivo", "fecha_descarte", "notas", "asistencia"],
 }
-CON_EMPLEADO = ("amonestaciones", "vacaciones", "memos")
-VERSION_ESQUEMA = 8
+CON_EMPLEADO = ("amonestaciones", "vacaciones", "memos", "ausencias")
+VERSION_ESQUEMA = 9
 CATEGORIAS_ADJUNTO = ["CV", "Prueba de Excel", "Otro"]
 EXT_ADJUNTOS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".xlsm")
 
@@ -114,6 +126,18 @@ CREATE TABLE IF NOT EXISTS memos (
     tema TEXT NOT NULL,
     emisor TEXT,
     observaciones TEXT,
+    archivo TEXT
+);
+CREATE TABLE IF NOT EXISTS ausencias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+    tipo TEXT NOT NULL,
+    fecha TEXT NOT NULL,
+    fecha_fin TEXT,
+    dias REAL,
+    motivo TEXT,
+    etapa TEXT NOT NULL DEFAULT 'Reportada',
+    fecha_cierre TEXT,
     archivo TEXT
 );
 CREATE TABLE IF NOT EXISTS embudo (
@@ -431,7 +455,7 @@ def ruta_archivo(nombre):
 
 
 _RENOMBRABLES = {("embudo", "plaza"), ("pruebas", "puesto"), ("entrevistas", "puesto"),
-                 ("empleados", "departamento"), ("empleados", "grupo"), ("memos", "tema"),
+                 ("empleados", "departamento"), ("empleados", "grupo"), ("empleados", "puesto"), ("memos", "tema"), ("ausencias", "tipo"), ("ausencias", "etapa"),
                  ("adjuntos", "categoria")}
 
 
