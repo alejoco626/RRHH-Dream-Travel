@@ -61,6 +61,12 @@ CONVERTIR LA PLANILLA DE CANDIDATOS (Excel) A JSON
   python herramientas\exportar_candidatos.py PLANILLA.xlsx salida.json
   Solo toma las hojas con nombre de persona (ignora "Matriz").
 
+ACTUALIZACIÓN AUTOMÁTICA
+  Al abrir (y con el botón "Buscar actualizaciones" del menú) la app consulta la última
+  versión publicada en GitHub Releases. Si hay una nueva, pregunta, la descarga, la verifica
+  y se reinicia sola. Solo funciona con RRHH.exe y necesita internet; tus datos no se tocan.
+  Para publicar una versión: Releases > Draft a new release > etiqueta nueva (v1.0.2...).
+
 CREAR .EXE
   pip install pyinstaller   y luego   empaquetar.bat
   El RRHH.exe sale con el ícono de la app (plantillas\icono.ico). Para cambiarlo,

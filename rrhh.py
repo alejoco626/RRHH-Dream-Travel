@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from datetime import date
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -9,11 +10,13 @@ import base_datos as bd
 import configuracion
 import componentes as ui
 import dialogo_evaluacion
+import actualizador
 import documentos
 import modulos
 import pagina_configuracion
 import pagina_ranking
 import tema
+import version
 from componentes import Etiqueta, ItemNav, Marco, Toast
 
 
@@ -56,25 +59,42 @@ class Aplicacion(tk.Tk):
         self.bind_all("<Control-s>", lambda e: self._atajo_guardar())
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
         self.mostrar("resumen")
+        if actualizador.puede_actualizarse():
+            self.after(2500, lambda: self._buscar_actualizacion(False))
 
     def _poner_icono(self):
         carpeta = documentos._carpeta_plantillas()
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                    "DreamTravel.RRHH")
-            except Exception:
-                pass
-            try:
-                self.iconbitmap(os.path.join(carpeta, "icono.ico"))
-                return
-            except tk.TclError:
-                pass
         try:
-            self._icono = tk.PhotoImage(file=os.path.join(carpeta, "icono_app.png"))
-            self.iconphoto(True, self._icono)
-        except tk.TclError:
+            self._iconos = [tk.PhotoImage(file=os.path.join(carpeta, n))
+                            for n in ("icono_app.png", "icono_32.png", "icono_16.png")
+                            if os.path.exists(os.path.join(carpeta, n))]
+            self.iconphoto(True, *self._iconos)
+        except Exception as e:
+            self._anotar_icono(e)
+        if sys.platform == "win32":
+            self.after(60, self._icono_windows)
+
+    def _icono_windows(self):
+        try:
+            import ctypes
+            u = ctypes.windll.user32
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DreamTravel.RRHH")
+            ruta = os.path.join(documentos._carpeta_plantillas(), "icono.ico")
+            ventana = u.GetParent(self.winfo_id()) or self.winfo_id()
+            for grande, medida in ((0, 49), (1, 11)):
+                tam = u.GetSystemMetrics(medida)
+                gestor = u.LoadImageW(None, ruta, 1, tam, tam, 0x10)
+                if gestor:
+                    u.SendMessageW(ventana, 0x80, grande, gestor)
+        except Exception as e:
+            self._anotar_icono(e)
+
+    def _anotar_icono(self, error):
+        try:
+            os.makedirs(bd.CARPETA_DATOS, exist_ok=True)
+            with open(os.path.join(bd.CARPETA_DATOS, "icono.log"), "a", encoding="utf-8") as f:
+                f.write(f"{error!r}\n")
+        except OSError:
             pass
 
     def _construir_lateral(self):
@@ -112,6 +132,9 @@ class Aplicacion(tk.Tk):
         )
         pie = Marco(lateral, fondo="lateral")
         pie.pack(side="bottom", fill="x", pady=(0, 14))
+        self.item_actualizar = ItemNav(pie, f"Buscar actualizaciones  ·  v{version.VERSION}",
+                                       lambda: self._buscar_actualizacion(True))
+        self.item_actualizar.pack(fill="x")
         self.item_modo = ItemNav(pie, "", self.alternar_modo)
         self.item_modo.pack(fill="x")
         self._texto_modo()
@@ -291,6 +314,80 @@ class Aplicacion(tk.Tk):
         pagina = self.paginas.get(self.actual)
         if hasattr(pagina, "guardar"):
             pagina.guardar()
+
+    def _buscar_actualizacion(self, manual):
+        if getattr(self, "_buscando", False):
+            return
+        self._buscando = True
+        resultado = {}
+
+        def trabajo():
+            try:
+                resultado["datos"] = actualizador.buscar_nueva()
+            except Exception as e:
+                resultado["error"] = e
+            resultado["listo"] = True
+
+        def revisar():
+            if not resultado.get("listo"):
+                self.after(250, revisar)
+                return
+            self._buscando = False
+            if "error" in resultado:
+                if manual:
+                    self.toast.mostrar("No se pudo comprobar: revisa tu conexión a internet", "error")
+            elif resultado["datos"]:
+                self._ofrecer_actualizacion(resultado["datos"])
+            elif manual:
+                self.toast.mostrar(f"Ya tienes la última versión (v{version.VERSION})", "ok")
+
+        if manual:
+            self.toast.mostrar("Buscando actualizaciones…", "ok")
+        threading.Thread(target=trabajo, daemon=True).start()
+        self.after(250, revisar)
+
+    def _ofrecer_actualizacion(self, datos):
+        notas = datos["notas"][:600]
+        texto = (f"Hay una versión nueva: {datos['version']} (tienes v{version.VERSION}).\n\n"
+                 + (notas + "\n\n" if notas else "") + "¿Actualizar ahora? La app se reiniciará.")
+        if not actualizador.puede_actualizarse():
+            messagebox.showinfo("Actualización disponible",
+                                f"Hay una versión nueva ({datos['version']}). La actualización "
+                                "automática solo funciona con RRHH.exe.", parent=self)
+            return
+        if not messagebox.askyesno("Actualización disponible", texto, parent=self):
+            return
+        pagina_docs = self.paginas.get("documentos")
+        if pagina_docs is not None and not pagina_docs.confirmar_salida():
+            return
+        estado = {}
+
+        def trabajo():
+            try:
+                actualizador.instalar_y_reiniciar(
+                    datos, lambda f: estado.__setitem__("fraccion", f))
+                estado["ok"] = True
+            except Exception as e:
+                estado["error"] = e
+            estado["listo"] = True
+
+        def revisar():
+            if not estado.get("listo"):
+                f = estado.get("fraccion")
+                if f is not None:
+                    self.toast.mostrar(f"Descargando actualización… {int(f * 100)}%", "ok", 900)
+                self.after(400, revisar)
+                return
+            if estado.get("ok"):
+                self.destroy()
+            else:
+                self.toast.mostrar("No se pudo actualizar; se mantiene esta versión", "error")
+                messagebox.showerror("Actualización", f"No se pudo actualizar:\n{estado['error']}",
+                                     parent=self)
+
+        self.toast.mostrar("Descargando actualización…", "ok", 1500)
+        threading.Thread(target=trabajo, daemon=True).start()
+        self.after(400, revisar)
 
     def _cerrar(self):
         documentos_pagina = self.paginas.get("documentos")

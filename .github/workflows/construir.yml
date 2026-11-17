@@ -19,6 +19,13 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install -r requisitos.txt pyinstaller
+      - name: Poner la versión de la etiqueta
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          (Get-Content version.py) -replace 'VERSION = ".*"', "VERSION = `"$v`"" | Set-Content version.py -Encoding utf8
+          Get-Content version.py
       - name: Probar la lógica
         run: python -m unittest pruebas_logica
       - name: Crear RRHH.exe

@@ -644,5 +644,34 @@ class PruebasCumpleanos(unittest.TestCase):
                          (date(2027, 11, 10), 359))
 
 
+
+class PruebasActualizador(unittest.TestCase):
+    def test_comparar_versiones(self):
+        import actualizador as a
+        self.assertTrue(a.es_mas_nueva("v1.0.1", "1.0.0"))
+        self.assertTrue(a.es_mas_nueva("v1.10.0", "1.9.9"))
+        self.assertTrue(a.es_mas_nueva("v2", "1.9.9"))
+        self.assertFalse(a.es_mas_nueva("v1.0.0", "1.0.0"))
+        self.assertFalse(a.es_mas_nueva("v1.0", "1.0.0"))
+        self.assertFalse(a.es_mas_nueva("v0.9", "1.0.0"))
+
+    def test_datos_de_release(self):
+        import actualizador as a
+        rel = {"tag_name": "v1.2.0", "body": " notas ", "assets": [
+            {"name": "otro.zip", "browser_download_url": "x"},
+            {"name": "RRHH.exe", "browser_download_url": "https://h/RRHH.exe", "size": 5,
+             "digest": "sha256:ABC123"}]}
+        d = a.datos_de_release(rel)
+        self.assertEqual((d["version"], d["notas"], d["tamano"], d["sha256"]),
+                         ("v1.2.0", "notas", 5, "abc123"))
+        self.assertIsNone(a.datos_de_release({"tag_name": "v9", "assets": []}))
+
+    def test_script_reemplazo(self):
+        import actualizador as a
+        t = a.texto_script(r"C:\App\RRHH.exe", r"C:\App\RRHH_nuevo.exe", 1)
+        self.assertIn('move /y "C:\\App\\RRHH_nuevo.exe" "C:\\App\\RRHH.exe"', t)
+        self.assertIn('start "" "C:\\App\\RRHH.exe"', t)
+
+
 if __name__ == "__main__":
     unittest.main()
