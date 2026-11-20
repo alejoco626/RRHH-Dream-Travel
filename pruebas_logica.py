@@ -723,9 +723,9 @@ class PruebasActualizador(unittest.TestCase):
 
     def test_novedades_se_muestran_una_vez(self):
         import novedades as n
-        self.assertIsNotNone(n.notas_a_mostrar("1.2.1", True, None))
-        self.assertIsNotNone(n.notas_a_mostrar("1.2.1", False, "1.2.0"))
-        self.assertIsNone(n.notas_a_mostrar("1.2.1", False, "1.2.1"))
+        self.assertIsNotNone(n.notas_a_mostrar("1.2.2", True, None))
+        self.assertIsNotNone(n.notas_a_mostrar("1.2.2", False, "1.2.0"))
+        self.assertIsNone(n.notas_a_mostrar("1.2.2", False, "1.2.2"))
         self.assertIsNone(n.notas_a_mostrar("9.9.9", True, None))
 
     def test_instalador_iss(self):

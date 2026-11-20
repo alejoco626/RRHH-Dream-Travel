@@ -40,13 +40,15 @@ Name: "{autodesktop}\{#NombreApp}"; Filename: "{app}\RRHH.exe"; AppUserModelID: 
 ; Instalación normal: ofrece abrir la app.
 Filename: "{app}\RRHH.exe"; Description: "Abrir {#NombreApp} ahora"; Flags: nowait postinstall skipifsilent
 ; Actualización automática (silenciosa): reabre la app y le avisa para que muestre las novedades.
-Filename: "{app}\RRHH.exe"; Parameters: "--actualizado"; Flags: nowait postinstall runasoriginaluser skipifnotsilent
+Filename: "{app}\RRHH.exe"; Parameters: "--actualizado"; Flags: nowait skipifnotsilent
 
 [Code]
+function SetEnvironmentVariable(lpName, lpValue: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
 function InitializeSetup(): Boolean;
 begin
-  // El instalador lo lanza la app desde su carpeta temporal; sin esto la app reabierta heredaría
-  // esa carpeta y fallaría con "Failed to load Python DLL".
+  { El programa reabierto no debe heredar la carpeta temporal del anterior (error "Failed to load Python DLL"). }
   SetEnvironmentVariable('PYINSTALLER_RESET_ENVIRONMENT', '1');
   Result := True;
 end;

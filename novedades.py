@@ -16,7 +16,7 @@ SECCIONES = (
 )
 
 NOVEDADES = {
-    "1.2.1": {
+    "1.2.2": {
         "nuevo": ["La actualización automática ahora descarga el instalador, lo verifica y reabre la app sola"],
         "correcciones": ["Se corrigió la actualización que no terminaba de instalarse"],
     },
