@@ -7,10 +7,13 @@ aaaa-mm-dd en la base de datos.
 import functools
 import os
 import sqlite3
+import queue
 import subprocess
 import sys
 import tempfile
-from datetime import date, timedelta
+import threading
+import traceback
+from datetime import date, datetime, timedelta
 
 import agenda
 import ausencias
@@ -23,7 +26,9 @@ import informes
 import logica
 import ranking
 import respaldos
+import novedades
 import version
+from config_app import ARCHIVO_ERRORES
 
 ETAPAS = ["Prueba de habilidades", "Pruebas psicométricas", "Entrevista"]
 PSICO = "Pruebas psicométricas"
@@ -245,6 +250,17 @@ class SinDatos(Exception):
     pass
 
 
+def registrar_error(texto):
+    """Guarda el error para poder diagnosticarlo (el .exe no tiene consola)."""
+    try:
+        os.makedirs(os.path.dirname(ARCHIVO_ERRORES), exist_ok=True)
+        with open(ARCHIVO_ERRORES, "a", encoding="utf-8") as archivo:
+            archivo.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S} · versión {version.VERSION}\n"
+                          f"{texto}\n")
+    except OSError:
+        pass
+
+
 def seguro(funcion):
     @functools.wraps(funcion)
     def envoltura(self, *args, **kwargs):
@@ -257,8 +273,40 @@ def seguro(funcion):
         except OSError as e:
             return {"ok": False, "error": f"No se pudo completar la operación: {e}"}
         except Exception as e:  # la pantalla nunca debe quedarse sin respuesta
+            registrar_error(traceback.format_exc())
             return {"ok": False, "error": f"Error inesperado: {type(e).__name__}: {e}"}
     return envoltura
+
+
+class DescargaEnCurso:
+    """Estado de la descarga de una actualización, consultado por la página."""
+
+    def __init__(self, info):
+        import actualizador
+        self.info = info
+        self.cola = queue.Queue()
+        self.progreso = 0.0
+        self.resultado = None  # ("listo", ruta) o ("error", mensaje)
+        threading.Thread(target=actualizador.hilo_descargar, args=(info, self.cola),
+                         daemon=True).start()
+
+    def estado(self):
+        while self.resultado is None:
+            try:
+                mensaje = self.cola.get_nowait()
+            except queue.Empty:
+                break
+            if mensaje[0] == "progreso":
+                if mensaje[2]:
+                    self.progreso = min(1.0, mensaje[1] / mensaje[2])
+            else:
+                self.resultado = mensaje
+        if self.resultado is None:
+            return {"estado": "descargando", "progreso": self.progreso}
+        if self.resultado[0] == "error":
+            return {"estado": "error",
+                    "mensaje": f"No se pudo descargar la actualización.\n{self.resultado[1]}"}
+        return {"estado": "listo", "progreso": 1.0}
 
 
 class Api:
@@ -267,6 +315,9 @@ class Api:
         self._dialogos = None  # se puede reemplazar en pruebas
         self._actualizacion = None
         self.alerta_base = None
+        self._listo = threading.Event()
+        self._descarga = None
+        self._candado = threading.Lock()
 
     # ------------------------------------------------------------------ utilidades
     def _dialogo(self, tipo, **kw):
@@ -301,8 +352,29 @@ class Api:
     @seguro
     def inicio(self):
         return {"version": version.VERSION, "alerta_base": self.alerta_base,
+                "novedades": self._novedades(),
                 "modulos": self._modulos(),
                 "puede_actualizar": self._puede_actualizar(), "hoy": date.today().isoformat()}
+
+    @staticmethod
+    def _novedades():
+        """Notas de la versión si hay que mostrarlas ahora (solo en el programa instalado)."""
+        if not getattr(sys, "frozen", False):
+            return None
+        notas = novedades.notas_a_mostrar(version.VERSION, novedades.ARGUMENTO_ACTUALIZADO in sys.argv,
+                                          novedades.leer_version_vista())
+        novedades.guardar_version_vista(version.VERSION)
+        if not notas:
+            return None
+        return {"version": version.VERSION, "secciones": [
+            {"titulo": t, "vineta": v, "elementos": list(notas.get(c) or [])}
+            for c, t, v in novedades.SECCIONES if notas.get(c)]}
+
+    @seguro
+    def listo(self):
+        """La página avisa que terminó de dibujarse (lo usa la prueba de arranque)."""
+        self._listo.set()
+        return True
 
     @staticmethod
     def _puede_actualizar():
@@ -1166,25 +1238,60 @@ class Api:
 
     # ------------------------------------------------------------------ actualizaciones
     @seguro
-    def buscar_actualizacion(self):
+    def buscar_actualizacion(self, manual=False):
+        """None si no hay nada nuevo. Solo el programa instalado se actualiza."""
         import actualizador
+        if not actualizador.puede_actualizarse():
+            return None
+        actualizador.limpiar_descargas()
         try:
-            datos = actualizador.buscar_nueva()
-        except (OSError, ValueError) as e:
-            raise ValueError(f"No se pudo consultar GitHub: {e}")
-        self._actualizacion = datos
-        return datos
+            info = actualizador.consultar_ultima_version()
+        except (OSError, ValueError, AttributeError) as e:
+            if manual:
+                raise ValueError(f"No se pudo consultar GitHub: {e}")
+            return None
+        if not info or not actualizador.es_mas_nueva(info["version"], version.VERSION):
+            return None
+        self._actualizacion = info
+        return {"version": info["version"], "actual": version.VERSION}
+
+    @seguro
+    def descargar_actualizacion(self):
+        with self._candado:
+            if self._actualizacion is None:
+                return {"estado": "error", "mensaje": "No hay una actualización pendiente."}
+            if self._descarga is None:
+                self._descarga = DescargaEnCurso(self._actualizacion)
+            return self._descarga.estado()
+
+    @seguro
+    def estado_descarga(self):
+        with self._candado:
+            if self._descarga is None:
+                return {"estado": "error", "mensaje": "La descarga no ha empezado."}
+            estado = self._descarga.estado()
+            if estado["estado"] == "error":
+                self._descarga = None  # se puede volver a intentar
+            return estado
 
     @seguro
     def instalar_actualizacion(self):
         import actualizador
-        if not self._actualizacion:
-            raise ValueError("No hay una actualización pendiente.")
-        if not actualizador.puede_actualizarse():
-            raise ValueError("La actualización automática solo funciona en la versión instalada.")
-        actualizador.instalar_y_reiniciar(self._actualizacion)
+        with self._candado:
+            descarga = self._descarga
+        if descarga is None or descarga.resultado is None or descarga.resultado[0] != "listo":
+            return {"ok": False, "mensaje": "La actualización todavía no se ha descargado."}
+        try:
+            actualizador.lanzar_instalador(descarga.resultado[1], descarga.info["sha256"])
+        except (OSError, ValueError) as error:
+            return {"ok": False, "mensaje": f"No se pudo instalar la actualización.\n{error}"}
         if self._ventana is not None:
-            self._ventana.destroy()
+            threading.Timer(0.2, self._ventana.destroy).start()
+        return {"ok": True}
+
+    @seguro
+    def registrar_error_pagina(self, texto):
+        registrar_error(f"Error en la página:\n{str(texto)[:4000]}")
         return True
 
     @seguro

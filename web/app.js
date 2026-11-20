@@ -21,6 +21,8 @@ async function arrancar() {
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); const p = ctx.paginas[ctx.actual]; if (p && p.guardar) p.guardar(); } });
   await ir("resumen");
   insignias();
+  intentar(() => llamar("listo"), true);
+  if (ini.novedades) setTimeout(() => mostrarNovedades(ini.novedades), 500);
   if (ini.puede_actualizar) setTimeout(() => buscarActualizacion(ini, true), 2500);
 }
 
@@ -92,16 +94,43 @@ async function insignias() {
   poner("resumen", r.atrasados); poner("pendientes", r.pendientes);
 }
 
+function mostrarNovedades(n) {
+  const cont = h("div", { class: "novedades" });
+  n.secciones.forEach((sec) => {
+    cont.append(h("h3", {}, sec.titulo));
+    cont.append(h("ul", {}, sec.elementos.map((t) => h("li", {}, h("span", { class: "vineta" }, sec.vineta), h("span", {}, t)))));
+  });
+  modal("¡Actualización v" + n.version + "!", cont, [{ texto: "Entendido", tipo: "pri", valor: true }]);
+}
+
 async function buscarActualizacion(ini, silencio) {
-  const r = await intentar(() => llamar("buscar_actualizacion"), silencio);
+  const r = await intentar(() => llamar("buscar_actualizacion", !silencio), silencio);
   if (r === undefined) return;
   if (!r) { if (!silencio) toast("Ya tienes la última versión (v" + ini.version + ").", "info"); return; }
-  const notas = r.notas ? "\n\n" + r.notas.slice(0, 500) : "";
-  if (!ini.puede_actualizar) { await avisar(`Hay una versión nueva: ${r.version}.${notas}\n\nDescárgala desde GitHub: la actualización automática solo funciona en la versión instalada.`, "Actualización disponible"); return; }
-  if (await confirmar(`Hay una versión nueva: ${r.version} (actual v${ini.version}).${notas}\n\nLa app se cerrará y se reiniciará sola.`, "Actualización disponible", false, "Actualizar ahora")) {
-    toast("Descargando la actualización…", "info");
-    await intentar(() => llamar("instalar_actualizacion"));
+  if (!ini.puede_actualizar) { await avisar(`Hay una versión nueva (${r.version}).\nTu versión es la ${r.actual}.\n\nDescarga el instalador desde GitHub: la actualización automática solo funciona en la versión instalada.`, "Actualización disponible"); return; }
+  if (await confirmar(`Hay una versión nueva (${r.version}).\nTu versión es la ${r.actual}.\n\n¿Quieres actualizar ahora?`, "Actualización disponible", false, "Actualizar")) descargarActualizacion(r);
+}
+
+function descargarActualizacion(info) {
+  const relleno = h("div", { class: "relleno" });
+  const pct = h("div", { class: "porcentaje" }, "0 %");
+  const cont = h("div", {}, h("div", { class: "progreso" }, relleno), pct);
+  modal("Descargando la versión " + info.version + "…", cont, [], { fijo: true });
+  const velo = () => { const v = document.querySelectorAll("#modales .velo"); return v[v.length - 1]; };
+  const fallo = async (mensaje) => { const v = velo(); if (v) v.cerrar(); await avisar(mensaje, "Actualización"); };
+  async function seguir(e) {
+    if (!e || e.estado === "error") { fallo((e && e.mensaje) || "No se pudo descargar la actualización."); return; }
+    const avance = Math.round((e.progreso || 0) * 100);
+    relleno.style.width = avance + "%"; pct.textContent = avance + " %";
+    if (e.estado === "listo") {
+      pct.textContent = "Instalando…";
+      const r = await intentar(() => llamar("instalar_actualizacion"), true);
+      if (!r || !r.ok) fallo((r && r.mensaje) || "No se pudo instalar la actualización.");
+      return;
+    }
+    setTimeout(async () => seguir(await intentar(() => llamar("estado_descarga"), true)), 300);
   }
+  intentar(() => llamar("descargar_actualizacion"), true).then(seguir);
 }
 
 arrancar();

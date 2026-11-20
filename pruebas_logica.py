@@ -656,22 +656,84 @@ class PruebasActualizador(unittest.TestCase):
         self.assertFalse(a.es_mas_nueva("v1.0", "1.0.0"))
         self.assertFalse(a.es_mas_nueva("v0.9", "1.0.0"))
 
-    def test_datos_de_release(self):
+    def test_interpretar_release(self):
         import actualizador as a
-        rel = {"tag_name": "v1.2.0", "body": " notas ", "assets": [
-            {"name": "otro.zip", "browser_download_url": "x"},
-            {"name": "RRHH.exe", "browser_download_url": "https://h/RRHH.exe", "size": 5,
-             "digest": "sha256:ABC123"}]}
-        d = a.datos_de_release(rel)
-        self.assertEqual((d["version"], d["notas"], d["tamano"], d["sha256"]),
-                         ("v1.2.0", "notas", 5, "abc123"))
-        self.assertIsNone(a.datos_de_release({"tag_name": "v9", "assets": []}))
+        from config_app import NOMBRE_INSTALADOR, PREFIJO_DESCARGA
+        url = PREFIJO_DESCARGA + "v1.2.0/" + NOMBRE_INSTALADOR
+        ok = {"tag_name": "v1.2.0", "assets": [
+            {"name": "otro.zip", "browser_download_url": PREFIJO_DESCARGA + "x"},
+            {"name": NOMBRE_INSTALADOR, "browser_download_url": url, "digest": "sha256:" + "AB" * 32}]}
+        d = a.interpretar_release(ok)
+        self.assertEqual((d["version"], d["sha256"]), ("1.2.0", "ab" * 32))
+        sin_huella = {"tag_name": "v1.2.0", "assets": [{"name": NOMBRE_INSTALADOR, "browser_download_url": url}]}
+        self.assertIsNone(a.interpretar_release(sin_huella))
+        externo = {"tag_name": "v9", "assets": [{"name": NOMBRE_INSTALADOR,
+                   "browser_download_url": "https://malo.com/x.exe", "digest": "sha256:" + "ab" * 32}]}
+        self.assertIsNone(a.interpretar_release(externo))
+        self.assertIsNone(a.interpretar_release({"tag_name": "v3", "draft": True, "assets": []}))
+        self.assertIsNone(a.interpretar_release({"tag_name": "v1.2;x", "assets": []}))
 
-    def test_script_reemplazo(self):
-        import actualizador as a
-        t = a.texto_script(r"C:\App\RRHH.exe", r"C:\App\RRHH_nuevo.exe", 1)
-        self.assertIn('move /y "C:\\App\\RRHH_nuevo.exe" "C:\\App\\RRHH.exe"', t)
-        self.assertIn('start "" "C:\\App\\RRHH.exe"', t)
+    def _descargar(self, contenido, sha, carpeta):
+        import actualizador as a, io, queue
+        from unittest import mock
+        class R(io.BytesIO):
+            headers = {}
+            def geturl(self): return "https://objects.githubusercontent.com/x"
+        r = R(contenido); r.headers = {"Content-Length": str(len(contenido))}
+        info = {"version": "1.2.0", "url": "https://github.com/x", "nombre": "I.exe", "sha256": sha}
+        cola = queue.Queue()
+        with mock.patch.object(a, "CARPETA_ACTUALIZACION", carpeta), \
+                mock.patch("urllib.request.urlopen", return_value=r):
+            a.hilo_descargar(info, cola)
+        msgs = []
+        while not cola.empty():
+            msgs.append(cola.get())
+        return msgs
+
+    def test_descarga_verifica_huella(self):
+        import hashlib
+        datos = os.urandom(100000)
+        with tempfile.TemporaryDirectory() as t:
+            bien = self._descargar(datos, hashlib.sha256(datos).hexdigest(), os.path.join(t, "u"))
+            self.assertEqual(bien[-1][0], "listo")
+            self.assertEqual(os.path.getsize(bien[-1][1]), len(datos))
+            mal = self._descargar(datos, "00" * 32, os.path.join(t, "v"))
+            self.assertEqual(mal[-1][0], "error")
+            self.assertEqual(self._descargar(b"", hashlib.sha256(b"").hexdigest(), os.path.join(t, "w"))[-1][0], "error")
+
+    def test_lanzar_instalador_silencioso_y_verificado(self):
+        import actualizador as a, hashlib
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            ruta = os.path.join(t, "I.exe")
+            open(ruta, "wb").write(b"instalador")
+            sha = hashlib.sha256(b"instalador").hexdigest()
+            with mock.patch("subprocess.Popen") as popen, self.assertRaises(ValueError):
+                a.lanzar_instalador(ruta, "00" * 32)
+            popen.assert_not_called()
+            os.makedirs(a.CARPETA_ACTUALIZACION, exist_ok=True)
+            open(ruta, "wb").write(b"instalador")
+            with mock.patch.dict(os.environ, {"_PYI_APPLICATION_HOME_DIR": "x", "_MEIPASS2": "y"}), \
+                    mock.patch("subprocess.Popen") as popen:
+                a.lanzar_instalador(ruta, sha)
+            args, op = popen.call_args
+            self.assertEqual(args[0][1:], ["/SILENT", "/NORESTART", "/CLOSEAPPLICATIONS"])
+            self.assertEqual(op["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+            self.assertNotIn("_MEIPASS2", op["env"])
+
+    def test_novedades_se_muestran_una_vez(self):
+        import novedades as n
+        self.assertIsNotNone(n.notas_a_mostrar("1.2.1", True, None))
+        self.assertIsNotNone(n.notas_a_mostrar("1.2.1", False, "1.2.0"))
+        self.assertIsNone(n.notas_a_mostrar("1.2.1", False, "1.2.1"))
+        self.assertIsNone(n.notas_a_mostrar("9.9.9", True, None))
+
+    def test_instalador_iss(self):
+        iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "instalador.iss"),
+                   encoding="utf-8").read()
+        self.assertIn("--actualizado", iss)
+        self.assertIn("PYINSTALLER_RESET_ENVIRONMENT", iss)
+        self.assertIn("OutputBaseFilename=RRHH-Instalador", iss)
 
 
 class PruebasAusenciasYPuestos(unittest.TestCase):

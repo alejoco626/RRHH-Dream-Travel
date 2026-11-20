@@ -36,6 +36,15 @@ jobs:
           --icon plantillas/icono.ico
           --add-data "plantillas;plantillas" --add-data "web;web"
           --collect-all webview --collect-all clr_loader --collect-all pythonnet rrhh.py
+      - name: Probar que la app arranca
+        shell: pwsh
+        run: |
+          $env:RRHH_PRUEBA_ARRANQUE = "1"
+          $env:RRHH_DATOS = "$env:RUNNER_TEMP\datos_prueba"
+          $p = Start-Process -FilePath dist\RRHH.exe -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "La app no cerró sola: la interfaz no cargó" }
+          $log = "$env:LOCALAPPDATA\DreamTravel\rrhh_error.log"
+          if (Test-Path $log) { Get-Content $log; throw "La app registró errores al arrancar" }
       - name: Crear el instalador
         shell: pwsh
         run: |
@@ -53,9 +62,11 @@ jobs:
             salida/RRHH-Instalador.exe
       - name: Publicar en Releases
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/RRHH.exe
-            salida/RRHH-Instalador.exe
-          generate_release_notes: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --generate-notes }
+          gh release upload $tag dist/RRHH.exe salida/RRHH-Instalador.exe --clobber

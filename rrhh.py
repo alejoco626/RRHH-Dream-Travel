@@ -1,8 +1,10 @@
 """RRHH – Dream & Travel. Interfaz web (HTML/CSS/JS) dentro de una ventana pywebview."""
 import os
+import threading
 import sys
 
 import api
+import config_app
 import base_datos as bd
 import configuracion
 import respaldos
@@ -24,7 +26,7 @@ def _nitidez_en_windows():
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DreamTravel.RRHH")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config_app.ID_APP_WINDOWS)
         except Exception:
             pass
 
@@ -93,7 +95,16 @@ def main():
                 pass
         return True
     ventana.events.closing += al_cerrar
-    webview.start(debug=bool(os.environ.get("RRHH_DEBUG")))
+    argumentos = {}
+    if os.environ.get("RRHH_PRUEBA_ARRANQUE"):  # lo usa el workflow: la página debe cargar y cerrarse
+        def prueba():
+            if puente._listo.wait(45):
+                threading.Event().wait(3)
+            else:
+                api.registrar_error("Prueba de arranque: la interfaz no terminó de cargar a tiempo.")
+            ventana.destroy()
+        argumentos = {"func": prueba}
+    webview.start(debug=bool(os.environ.get("RRHH_DEBUG")), **argumentos)
 
 
 if __name__ == "__main__":

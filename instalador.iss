@@ -33,8 +33,20 @@ Name: "escritorio"; Description: "Crear un acceso directo en el escritorio"; Gro
 Source: "dist\RRHH.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#NombreApp}"; Filename: "{app}\RRHH.exe"
-Name: "{autodesktop}\{#NombreApp}"; Filename: "{app}\RRHH.exe"; Tasks: escritorio
+Name: "{autoprograms}\{#NombreApp}"; Filename: "{app}\RRHH.exe"; AppUserModelID: "DreamTravel.RRHH"
+Name: "{autodesktop}\{#NombreApp}"; Filename: "{app}\RRHH.exe"; AppUserModelID: "DreamTravel.RRHH"; Tasks: escritorio
 
 [Run]
+; Instalación normal: ofrece abrir la app.
 Filename: "{app}\RRHH.exe"; Description: "Abrir {#NombreApp} ahora"; Flags: nowait postinstall skipifsilent
+; Actualización automática (silenciosa): reabre la app y le avisa para que muestre las novedades.
+Filename: "{app}\RRHH.exe"; Parameters: "--actualizado"; Flags: nowait postinstall runasoriginaluser skipifnotsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+begin
+  // El instalador lo lanza la app desde su carpeta temporal; sin esto la app reabierta heredaría
+  // esa carpeta y fallaría con "Failed to load Python DLL".
+  SetEnvironmentVariable('PYINSTALLER_RESET_ENVIRONMENT', '1');
+  Result := True;
+end;

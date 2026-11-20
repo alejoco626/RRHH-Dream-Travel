@@ -168,3 +168,12 @@ svg text{fill:var(--sec);font:11px "Segoe UI",system-ui,sans-serif}
 .estado-ok .sello{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:22px;background:rgba(27,138,90,.15);color:var(--ok)}
 .estado-ok.mal .sello{background:rgba(192,40,60,.15);color:var(--mal)}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* actualización y novedades */
+.progreso{height:8px;border-radius:4px;background:var(--borde);overflow:hidden;margin:14px 0 4px;min-width:340px}
+.progreso .relleno{height:100%;width:0;background:var(--azul,#003D6B);border-radius:4px;transition:width .2s linear}
+.porcentaje{font-size:12px;opacity:.7;text-align:right}
+.novedades h3{margin:12px 0 6px;font-size:14px}
+.novedades ul{margin:0;padding:0;list-style:none}
+.novedades li{display:flex;gap:8px;padding:2px 0 2px 6px}
+.novedades .vineta{flex:none;width:12px;font-weight:700;color:var(--azul,#003D6B)}
