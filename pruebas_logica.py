@@ -846,5 +846,113 @@ class PruebasRespaldos(unittest.TestCase):
             self.assertIn("Empleados", load_workbook(xlsx).sheetnames)
 
 
+class PruebasApi(unittest.TestCase):
+    def _api(self, t):
+        import api
+        bd.RUTA_DB = os.path.join(t, "x.db")
+        bd.CARPETA_DATOS = t
+        bd.CARPETA_ARCHIVOS = os.path.join(t, "a")
+        bd.crear_tablas()
+        a = api.Api()
+        a._dialogos = lambda tipo, **kw: os.path.join(t, kw.get("nombre") or "salida.xlsx")
+        return a
+
+    def _emp(self, a, nombre="Ana", grupo=None):
+        v = a.nuevo("empleados")["datos"]["valores"]
+        v.update(nombre_completo=nombre, puesto="Reclutador", departamento="Ventas",
+                 fecha_ingreso="01/03/2023")
+        if grupo:
+            v["grupo"] = grupo
+        return a.guardar("empleados", None, v)["datos"]["id"]
+
+    def test_guardar_valida_y_devuelve_error_legible(self):
+        with tempfile.TemporaryDirectory() as t:
+            a = self._api(t)
+            v = a.nuevo("empleados")["datos"]["valores"]
+            r = a.guardar("empleados", None, v)
+            self.assertFalse(r["ok"])
+            self.assertIn("Nombre completo", r["error"])
+            v.update(nombre_completo="Ana", puesto="X", departamento="Y", fecha_ingreso="31/02/2020")
+            self.assertIn("Fecha no válida", a.guardar("empleados", None, v)["error"])
+            self.assertFalse(a.obtener("empleados", 99)["ok"])
+
+    def test_vacaciones_calculos_y_folio(self):
+        with tempfile.TemporaryDirectory() as t:
+            a = self._api(t)
+            emp = self._emp(a, grupo="Ventas – Senior")
+            self.assertEqual(a.autorizadores(emp)["datos"], ["DEBI"])
+            c = a.calcular_goce("dias", {"fecha_inicio": "07/12/2026", "dias": "5"})["datos"]
+            self.assertEqual(c["fecha_fin"], "11/12/2026")
+            self.assertIn("fecha_regreso", c)
+            p = a.sugerir_periodo(emp, "07/12/2026", "", False)["datos"]
+            self.assertEqual(p["periodo_desde"], "01/03/2025")
+            v = a.nuevo("vacaciones")["datos"]["valores"]
+            v.update(empleado_id=str(emp), fecha_solicitud="01/12/2026", autoriza="DEBI",
+                     fecha_inicio="07/12/2026", dias="5", fecha_fin="11/12/2026",
+                     periodo_desde="01/03/2025", periodo_hasta="28/02/2026", folio="")
+            r = a.guardar("vacaciones", None, v)
+            self.assertTrue(r["ok"], r)
+            self.assertEqual(r["datos"]["valores"]["folio"], "2026-0001")
+            v["dias"] = "4"
+            self.assertIn("no coinciden", a.guardar("vacaciones", r["datos"]["id"], v)["error"])
+
+    def test_embudo_acciones_y_no_aprobados(self):
+        with tempfile.TemporaryDirectory() as t:
+            a = self._api(t)
+            v = a.nuevo("embudo")["datos"]["valores"]
+            v.update(nombre_completo="Rita", telefono="555", fecha="25/11/2026", hora="10:00")
+            i = a.guardar("embudo", None, v)["datos"]["id"]
+            r = a.accion("embudo", "mover_etapa", i)["datos"]
+            self.assertEqual(bd.obtener("embudo", i)["etapa"], "Pruebas psicométricas")
+            a.accion("embudo", "descartar", i, {"motivo": "No llegó"})
+            self.assertEqual(a.listar("embudo")["datos"]["total"], 0)
+            self.assertEqual(a.listar("no_aprobados")["datos"]["total"], 1)
+            a.accion("no_aprobados", "reactivar", i)
+            self.assertEqual(a.listar("embudo")["datos"]["total"], 1)
+            self.assertIn("navegar", a.accion("embudo", "registrar_resultado", i)["datos"])
+
+    def test_ficha_notas_confirmaciones_y_ranking(self):
+        import evaluacion as ev
+        with tempfile.TemporaryDirectory() as t:
+            a = self._api(t)
+            f = a.ficha()["datos"]
+            for s in f["detalle"]["secciones"]:
+                for c in s["criterios"]:
+                    c["calificacion"] = "4"
+            f["detalle"]["secciones"][0]["criterios"][0]["calificacion"] = "9"
+            datos = dict(f, candidato="Ana T", fecha="01/11/2026", fecha_prueba="")
+            self.assertIn("entre 0 y 5", a.ficha_guardar(datos)["error"])
+            datos["detalle"]["secciones"][0]["criterios"][0]["calificacion"] = "5"
+            r = a.ficha_guardar(datos)["datos"]
+            self.assertIn("guardado", r)
+            self.assertEqual(a.ranking()["datos"]["filas"][0]["candidato"], "Ana T")
+            repetida = a.ficha_guardar(dict(datos, id=None))["datos"]
+            self.assertEqual(repetida["clave"], "repetida")
+            self.assertIn("guardado", a.ficha_guardar(dict(datos, id=None), ["repetida"])["datos"])
+
+    def test_informe_config_y_respaldo_por_api(self):
+        with tempfile.TemporaryDirectory() as t:
+            a = self._api(t)
+            emp = self._emp(a)
+            m = a.nuevo("memos")["datos"]["valores"]
+            m.update(empleado_id=str(emp), fecha="02/11/2026", tema=configuracion.TEMAS_MEMO[0])
+            a.guardar("memos", None, m)
+            self.assertEqual(len(a.informe("memos", emp, "", "")["datos"]["filas"]), 1)
+            self.assertEqual(len(a.informe("memos", emp, "03/11/2026", "")["datos"]["filas"]), 0)
+            self.assertFalse(a.informe("memos", None, "x", "")["ok"])
+            self.assertTrue(os.path.exists(a.informe_excel("memos", emp)["datos"]["ruta"]))
+            c = a.config_obtener()["datos"]
+            viejo = c["temas_memo"][0]
+            c["temas_memo"][0] = "Tema nuevo"
+            a.config_guardar(c, [{"lista": "temas_memo", "viejo": viejo, "nuevo": "Tema nuevo"}])
+            self.assertEqual(a.listar("memos")["datos"]["filas"][0]["celdas"][2], "Tema nuevo")
+            c["dias_cumpleanos"] = "0"
+            self.assertFalse(a.config_guardar(c)["ok"])
+            configuracion.restablecer()
+            self.assertTrue(a.respaldo_crear()["datos"]["ok"])
+            self.assertEqual(len(a.respaldos_estado()["datos"]["lista"]), 1)
+            self.assertTrue(a.resumen()["ok"] and a.pendientes()["ok"] and a.insignias()["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

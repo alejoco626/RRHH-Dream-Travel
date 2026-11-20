@@ -28,11 +28,14 @@ jobs:
           Get-Content version.py
       - name: Probar la lógica
         run: python -m unittest pruebas_logica
+      - name: Comprobar pywebview
+        run: python -c "import webview, clr_loader; print(webview.__file__)"
       - name: Crear RRHH.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name RRHH
           --icon plantillas/icono.ico
-          --add-data "plantillas;plantillas" rrhh.py
+          --add-data "plantillas;plantillas" --add-data "web;web"
+          --collect-all webview --collect-all clr_loader --collect-all pythonnet rrhh.py
       - name: Crear el instalador
         shell: pwsh
         run: |

@@ -1,6 +1,6 @@
 # RRHH – Dream & Travel
 
-Aplicación de escritorio para Windows (Python + Tkinter + SQLite) del departamento de Recursos Humanos: embudo de confirmados, pruebas, entrevistas, ranking por plaza, personal, vacaciones y documentos.
+Aplicación de escritorio para Windows (Python + pywebview + SQLite) del departamento de Recursos Humanos: embudo de confirmados, pruebas, entrevistas, ranking por plaza, personal, vacaciones y documentos.
 
 ## Descargar y ejecutar
 
@@ -12,6 +12,12 @@ Aplicación de escritorio para Windows (Python + Tkinter + SQLite) del departame
 `RRHH.exe` (portable, sin instalar) también está en Releases; guarda sus datos junto al `.exe` si ya hay una carpeta `datos` allí.
 
 Si Windows muestra "SmartScreen", pulsa *Más información → Ejecutar de todos modos*.
+
+## Interfaz
+
+La interfaz es web (HTML, CSS y JavaScript sin dependencias externas, en la carpeta `web/`) dentro de una ventana **pywebview** (usa Microsoft Edge WebView2, ya incluido en Windows 10/11). Tiene gráficas SVG animadas, modo claro/oscuro y atajo Ctrl+S para guardar. La lógica y la base de datos siguen en Python; `api.py` es el puente entre ambas.
+
+Para probar la interfaz en un navegador normal: `python servidor_dev.py` y abre http://127.0.0.1:8765.
 
 ## Respaldos
 

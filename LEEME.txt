@@ -3,8 +3,11 @@ RRHH - Dream & Travel (app de escritorio)
 
 INSTALAR Y ABRIR
   1. Instala Python 3.10 o superior (marca "Add Python to PATH").
-  2. En esta carpeta:   pip install -r requisitos.txt
+  2. En esta carpeta:   pip install -r requisitos.txt   (incluye pywebview)
   3. Abrir:             python rrhh.py
+  La ventana usa Microsoft Edge WebView2 (ya viene en Windows 10 y 11).
+  Atajos: Ctrl+S guarda el registro o el documento abierto; Enter pasa al campo siguiente.
+  El botón de la esquina inferior izquierda cambia entre modo claro y oscuro.
 
 Los datos quedan en la carpeta "datos" (base rrhh.db, archivos subidos y documentos
 Word creados). Para respaldar todo, copia esa carpeta.
