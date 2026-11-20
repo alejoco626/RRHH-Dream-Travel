@@ -68,6 +68,15 @@ INSTALADOR
   desinstalar. Si venías usando RRHH.exe portable, copia su carpeta "datos" a esa ruta.
   El .exe portable sigue disponible; si junto a él existe la carpeta "datos", la usa.
 
+RESPALDOS Y VERIFICACIÓN DE LA BASE DE DATOS
+Menú Sistema > Respaldos.
+ - Al abrir se revisa la integridad de la base; si está dañada, ofrece restaurar la última copia.
+ - Se crea una copia automática al abrir (si pasaron 8 h) y al cerrar (si pasaron 2 h); se
+   conservan las últimas 15. Cada copia es un ZIP con la base y los archivos adjuntos.
+ - "Crear respaldo ahora", "Restaurar" (antes guarda lo actual), "Copia en otra carpeta"
+   (OneDrive, USB o red) y "Exportar todo a Excel".
+ - Las copias están en la carpeta datos\respaldos.
+
 ACTUALIZACIÓN AUTOMÁTICA
   Al abrir (y con el botón "Buscar actualizaciones" del menú) la app consulta la última
   versión publicada en GitHub Releases. Si hay una nueva, pregunta, la descarga, la verifica

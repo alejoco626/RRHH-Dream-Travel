@@ -13,6 +13,10 @@ Aplicación de escritorio para Windows (Python + Tkinter + SQLite) del departame
 
 Si Windows muestra "SmartScreen", pulsa *Más información → Ejecutar de todos modos*.
 
+## Respaldos
+
+Menú **Respaldos**: verificación de integridad al abrir, copias automáticas (ZIP con base y adjuntos, últimas 15), respaldo manual, restauración segura, copia a otra carpeta y exportación a Excel.
+
 ## Ejecutar desde el código
 
 ```

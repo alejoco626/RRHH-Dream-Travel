@@ -765,5 +765,86 @@ class PruebasInformes(unittest.TestCase):
         self.assertIn("del 01/11/2026 al hoy", i.subtitulo("Ana", "2026-11-01", None, 3))
 
 
+class PruebasRespaldos(unittest.TestCase):
+    def _bd(self, t):
+        bd.RUTA_DB = os.path.join(t, "x.db")
+        bd.CARPETA_DATOS = t
+        bd.CARPETA_ARCHIVOS = os.path.join(t, "archivos")
+        bd.crear_tablas()
+        os.makedirs(bd.CARPETA_ARCHIVOS, exist_ok=True)
+        with open(os.path.join(bd.CARPETA_ARCHIVOS, "cv.txt"), "w") as f:
+            f.write("hola")
+        return bd.guardar("empleados", {"nombre_completo": "Ana", "puesto": "P",
+                                        "departamento": "D"})
+
+    def test_verificar_y_respaldo_restaurar(self):
+        import respaldos as r
+        with tempfile.TemporaryDirectory() as t:
+            self._bd(t)
+            self.assertTrue(r.verificar()["ok"])
+            ruta = os.path.join(t, "copia.zip")
+            info = r.crear_respaldo(ruta)
+            self.assertTrue(info["ok"])
+            self.assertEqual(info["adjuntos"], 1)
+            bd.guardar("empleados", {"nombre_completo": "Luis", "puesto": "P",
+                                     "departamento": "D"})
+            os.remove(os.path.join(bd.CARPETA_ARCHIVOS, "cv.txt"))
+            r.restaurar(ruta)
+            self.assertEqual([e["nombre_completo"] for e in bd.listar("empleados")], ["Ana"])
+            self.assertTrue(os.path.exists(os.path.join(bd.CARPETA_ARCHIVOS, "cv.txt")))
+            self.assertEqual(len([x for x in r.listar_respaldos()
+                                  if x["tipo"] == "Antes de restaurar"]), 1)
+
+    def test_detecta_base_dañada_y_zip_alterado(self):
+        import respaldos as r
+        import zipfile
+        with tempfile.TemporaryDirectory() as t:
+            self._bd(t)
+            ruta = os.path.join(t, "copia.zip")
+            r.crear_respaldo(ruta)
+            malo = os.path.join(t, "malo.zip")
+            with zipfile.ZipFile(ruta) as z, zipfile.ZipFile(malo, "w") as w:
+                for n in z.namelist():
+                    datos = z.read(n)
+                    w.writestr(n, datos + b"x" if n == "rrhh.db" else datos)
+            with self.assertRaises(ValueError):
+                r.restaurar(malo)
+            with open(os.path.join(t, "roto.db"), "wb") as f:
+                f.write(b"esto no es sqlite" * 50)
+            self.assertFalse(r.verificar_archivo(os.path.join(t, "roto.db"))["ok"])
+            falso = os.path.join(t, "falso.zip")
+            with zipfile.ZipFile(falso, "w") as w:
+                w.writestr("../fuera.txt", "x")
+            with self.assertRaises(ValueError):
+                r.restaurar(falso)
+
+    def test_automatico_rota_y_respeta_intervalo(self):
+        import respaldos as r
+        with tempfile.TemporaryDirectory() as t:
+            self._bd(t)
+            self.assertIsNotNone(r.respaldo_automatico())
+            self.assertIsNone(r.respaldo_automatico())
+            carpeta = r.carpeta_respaldos()
+            for i in range(20):
+                open(os.path.join(carpeta, f"{r.PREFIJO_AUTO}2020-01-{i + 1:02d}_000000.zip"),
+                     "w").close()
+            r.rotar(r.PREFIJO_AUTO, r.CONSERVAR_AUTO)
+            self.assertEqual(len(r.listar_respaldos()), r.CONSERVAR_AUTO)
+
+    def test_copia_externa_y_excel(self):
+        import respaldos as r
+        from openpyxl import load_workbook
+        with tempfile.TemporaryDirectory() as t:
+            self._bd(t)
+            externa = os.path.join(t, "nube")
+            bd.guardar_config(r.CLAVE_EXTERNA, externa)
+            info = r.respaldo_automatico()
+            self.assertTrue(info["externo"])
+            self.assertEqual(len(os.listdir(externa)), 1)
+            xlsx = os.path.join(t, "todo.xlsx")
+            r.exportar_todo_xlsx(xlsx)
+            self.assertIn("Empleados", load_workbook(xlsx).sheetnames)
+
+
 if __name__ == "__main__":
     unittest.main()

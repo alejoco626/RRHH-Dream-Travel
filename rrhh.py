@@ -15,6 +15,8 @@ import documentos
 import modulos
 import pagina_configuracion
 import pagina_ranking
+import pagina_respaldos
+import respaldos
 import tema
 import version
 from componentes import Etiqueta, ItemNav, Marco, Toast
@@ -23,8 +25,13 @@ from componentes import Etiqueta, ItemNav, Marco, Toast
 class Aplicacion(tk.Tk):
     def __init__(self):
         super().__init__()
+        self._revisar_base()
         bd.crear_tablas()
         configuracion.cargar()
+        try:
+            respaldos.respaldo_automatico()
+        except Exception as e:
+            self.after(1500, lambda: messagebox.showwarning("Respaldo automático", str(e)))
         self.title("RRHH – Dream & Travel")
         self._poner_icono()
         ancho = min(1380, self.winfo_screenwidth() - 40)
@@ -126,10 +133,10 @@ class Aplicacion(tk.Tk):
                            ("no_aprobados", "No aprobados"))),
             ("Personal", (("empleados", "Empleados"), ("amonestaciones", "Amonestaciones"),
                           ("vacaciones", "Vacaciones"), ("memos", "Memorándums"),
-                          ("ausencias", "Embudo de ausencias"))),
+                          ("ausencias", "Ausencias"))),
             ("Documentos", (("documentos", "Vista previa"),
                             ("pendientes", "Pendientes de completar"))),
-            ("Sistema", (("configuracion", "Configuración"),)),
+            ("Sistema", (("respaldos", "Respaldos"), ("configuracion", "Configuración"))),
         )
         pie = Marco(lateral, fondo="lateral")
         pie.pack(side="bottom", fill="x", pady=(0, 14))
@@ -218,9 +225,10 @@ class Aplicacion(tk.Tk):
                 self.contenido, self, "memos", "Memorándums",
                 "Políticas internas firmadas por cada empleado")),
             ("ausencias", modulos.ModuloCrud(
-                self.contenido, self, "ausencias", "Embudo de ausencias",
+                self.contenido, self, "ausencias", "Ausencias",
                 "Faltas, permisos e incapacidades de los empleados, desde que se reportan hasta su cierre",
                 acciones=[("Siguiente etapa", modulos.accion_avanzar_ausencia)])),
+            ("respaldos", pagina_respaldos.PaginaRespaldos(self.contenido, self)),
             ("documentos", modulos.PaginaDocumentos(self.contenido, self)),
             ("pendientes", modulos.Pendientes(self.contenido, self)),
         )
@@ -398,7 +406,33 @@ class Aplicacion(tk.Tk):
         documentos_pagina = self.paginas.get("documentos")
         if documentos_pagina is not None and not documentos_pagina.confirmar_salida():
             return
+        try:
+            respaldos.respaldo_automatico(horas=2)
+        except Exception:
+            pass
         self.destroy()
+
+    def _revisar_base(self):
+        if not os.path.exists(bd.RUTA_DB):
+            return
+        estado = respaldos.verificar_archivo(bd.RUTA_DB)
+        if estado["ok"]:
+            return
+        copias = [r for r in respaldos.listar_respaldos() if r["tipo"] != "Antes de restaurar"]
+        detalle = estado["error"][:300]
+        if copias and messagebox.askyesno(
+                "Base de datos dañada",
+                f"Se detectó un problema en la base de datos:\n{detalle}\n\n"
+                f"¿Restaurar el respaldo más reciente ({copias[0]['fecha']:%d/%m/%Y %H:%M})?\n"
+                "La base actual se conserva como copia de seguridad."):
+            try:
+                respaldos.restaurar(copias[0]["ruta"])
+                return
+            except Exception as e:
+                messagebox.showerror("Restaurar", str(e))
+        else:
+            messagebox.showwarning("Base de datos", "Se abrirá la base tal como está. "
+                                   "Entra a Respaldos para restaurar una copia.")
 
 
 def _nitidez_en_windows():

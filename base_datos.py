@@ -174,6 +174,7 @@ def _conectar():
     con = sqlite3.connect(RUTA_DB)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
+    con.execute("PRAGMA busy_timeout = 5000")
     return con
 
 

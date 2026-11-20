@@ -423,7 +423,7 @@ class PaginaConfiguracion(Pagina):
             EditorLista(rejilla, self, "Tipos de ausencia", "Clases de ausencia que se pueden "
                         "registrar a un empleado.", ausencias.TIPOS,
                         lambda v, n: bd.renombrar_valor("ausencias", "tipo", v, n)),
-            EditorLista(rejilla, self, "Etapas del embudo de ausencias", "Recorrido de cada "
+            EditorLista(rejilla, self, "Etapas de ausencias", "Recorrido de cada "
                         "ausencia, en orden; la última etapa se considera cerrada.",
                         ausencias.ETAPAS,
                         lambda v, n: bd.renombrar_valor("ausencias", "etapa", v, n)),
