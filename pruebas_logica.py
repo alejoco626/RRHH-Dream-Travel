@@ -1026,6 +1026,20 @@ class PruebasSeleccion(PruebasBase):
                 c["calificacion"] = v
         return d
 
+    def test_json_con_otro_nombre_se_detecta_por_su_contenido(self):
+        import json
+        import datos_json
+        carpeta = os.path.join(bd.CARPETA_DATOS, "importar")
+        os.makedirs(carpeta, exist_ok=True)
+        with open(os.path.join(carpeta, "WhatsApp Document.json"), "w", encoding="utf-8") as f:
+            json.dump({"formato": datos_json.FORMATO, "candidatos": [{"nombre": "Persona Tres"}],
+                       "programacion": []}, f)
+        with open(os.path.join(carpeta, "ajeno.json"), "w", encoding="utf-8") as f:
+            json.dump({"otro": 1}, f)
+        nombres = [os.path.basename(r) for r in datos_json.archivos_pendientes()]
+        self.assertIn("WhatsApp Document.json", nombres)
+        self.assertNotIn("ajeno.json", nombres)
+
     def test_normalizacion(self):
         import seleccion as sel
         self.assertEqual(sel.nombre_normal("laura   Pérez  Gómez"), "Laura Pérez Gómez")

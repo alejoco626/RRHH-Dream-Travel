@@ -85,7 +85,7 @@ async function paginaCandidatos(m, ctx) {
   }
 
   function pintarTabla(r) {
-    if (!r.filas.length) { tabla.replaceChildren(sinFilas(r.todos ? "Ningún candidato coincide con el filtro." : "Aún no hay candidatos. Agrega uno o carga el archivo de datos.")); total.textContent = "0"; return; }
+    if (!r.filas.length) { tabla.replaceChildren(r.todos ? sinFilas("Ningún candidato coincide con el filtro.") : h("div", { class: "vacio" }, h("p", {}, "Aún no hay candidatos."), h("p", { class: "tenue" }, "Si ya tienes el archivo de datos, elígelo aquí (no importa el nombre que tenga)."), h("button", { class: "btn pri", onclick: cargarJson }, "Cargar datos (JSON)"))); total.textContent = "0"; return; }
     const cab = ["Candidato", "Asistencia", "Estado", "Prueba", "Entrevista", "Resultado", "Grupo"];
     const cuerpo = r.filas.map((f) => h("tr", { class: "fila-nueva" + (f.id === est.id ? " sel" : ""), onclick: () => abrir(f.id) },
       h("td", { title: f.nombre }, h("b", {}, f.nombre), f.entrevista_hoy ? chip("Hoy", "av") : null, f.duplicado.length ? h("span", { class: "chip na", title: f.duplicado.join("\n") }, "Posible duplicado") : null, h("small", { class: "sub-nombre" }, f.puesto)),

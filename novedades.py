@@ -16,6 +16,10 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.2": {
+        "cambios": ["La carga automática reconoce el archivo de datos aunque tenga otro nombre (WhatsApp, correo, «(1)»…)"],
+        "correcciones": ["Si no hay datos, la app lo avisa y ofrece el botón «Cargar datos (JSON)» en lugar de quedar en blanco"],
+    },
     "1.4.1": {
         "nuevo": ["Aviso «Posible duplicado» en la tabla y en la ficha cuando dos candidatos comparten teléfono, correo o nombre, con el motivo"],
         "cambios": ["Las filas repetidas se guardan tal como están en el libro (nombre, teléfono, correo, puesto y fuente) dentro del historial"],

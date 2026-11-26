@@ -1801,6 +1801,12 @@ class Api:
         return self.carga_inicial or []
 
     @seguro
+    def datos_estado(self):
+        """Cuántos candidatos hay y en qué carpetas busca la app el archivo de datos."""
+        return {"candidatos": len(bd.listar("candidatos")),
+                "carpetas": [c for c in datos_json.carpetas_importacion() if os.path.isdir(c)]}
+
+    @seguro
     def guardar_umbrales(self, umbral_a, umbral_b):
         a, b = float(umbral_a), float(umbral_b)
         if not (0 < b < a <= 1):

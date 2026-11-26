@@ -29,15 +29,31 @@ def carpetas_importacion():
             os.path.join(casa, "Desktop"), os.path.join(casa, "Escritorio")]
 
 
+def _parece_de_la_app(ruta):
+    """Un .json con otro nombre (WhatsApp, correo, «(1)»…) vale si por dentro dice que es de la app."""
+    try:
+        if os.path.getsize(ruta) > 200 * 1024 * 1024:
+            return False
+        with open(ruta, encoding="utf-8-sig", errors="ignore") as f:
+            return FORMATO in f.read(2048)
+    except OSError:
+        return False
+
+
 def archivos_pendientes():
     vistos, res = set(), []
     for carpeta in carpetas_importacion():
+        rutas = []
         for patron in NOMBRES:
-            for ruta in sorted(glob.glob(os.path.join(carpeta, patron))):
-                real = os.path.realpath(ruta)
-                if real not in vistos:
-                    vistos.add(real)
-                    res.append(ruta)
+            rutas += sorted(glob.glob(os.path.join(carpeta, patron)))
+        # cualquier otro .json de la carpeta que, por dentro, sea un archivo de datos de la app
+        rutas += [r for r in sorted(glob.glob(os.path.join(carpeta, "*.json")))
+                  if r not in rutas and _parece_de_la_app(r)]
+        for ruta in rutas:
+            real = os.path.realpath(ruta)
+            if real not in vistos:
+                vistos.add(real)
+                res.append(ruta)
     return res
 
 
@@ -57,7 +73,7 @@ def _cargados():
 
 
 def leer(ruta):
-    with open(ruta, encoding="utf-8") as f:
+    with open(ruta, encoding="utf-8-sig") as f:
         datos = json.load(f)
     if not isinstance(datos, dict) or datos.get("formato") != FORMATO:
         raise ValueError("El archivo no es un JSON de datos de esta aplicación.")

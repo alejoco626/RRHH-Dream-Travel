@@ -94,7 +94,12 @@ async function ir(clave, opciones = {}) {
 }
 
 async function avisarCargaAutomatica() {
-  const r = await intentar(() => llamar("datos_automaticos"), true); if (!r || !r.length) return;
+  const r = await intentar(() => llamar("datos_automaticos"), true);
+  if (!r || !r.length) {
+    const e = await intentar(() => llamar("datos_estado"), true);
+    if (e && !e.candidatos) toast("Aún no hay datos. En Candidatos usa «Cargar datos (JSON)» para elegir el archivo.", "error");
+    return;
+  }
   r.forEach((x) => {
     if (x.error) toast(`No se pudo cargar ${x.archivo}: ${x.error}`, "error");
     else if (x.candidatos || x.programacion) toast(`Datos cargados: ${x.candidatos} candidatos y ${x.programacion} actividades nuevas.`);
