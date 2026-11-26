@@ -1028,8 +1028,8 @@ class PruebasSeleccion(PruebasBase):
 
     def test_normalizacion(self):
         import seleccion as sel
-        self.assertEqual(sel.nombre_normal("Luisa NataliaFflores  Estrada"), "Luisa Natalia Flores Estrada")
-        self.assertEqual(sel.nombre_normal("Gladys Fernanda Jiguan DE león"), "Gladys Fernanda Jiguan de León")
+        self.assertEqual(sel.nombre_normal("laura   Pérez  Gómez"), "Laura Pérez Gómez")
+        self.assertEqual(sel.nombre_normal("Marta Elena RUIZ DE león"), "Marta Elena Ruiz de León")
         self.assertEqual(sel.telefono_normal("50255551234"), "+502 5555 1234")
         self.assertEqual(sel.fecha_normal("19/11/82026"), "2026-11-19")
         self.assertEqual(sel.fecha_normal("2026-11-05 00:00:00"), "2026-11-05")
@@ -1170,7 +1170,7 @@ class PruebasSeleccion(PruebasBase):
                 {"tipo": "prueba", "fecha": "2026-11-17", "hora": "10:00", "detalle": "se reagendó"},
                 {"tipo": "prueba", "fecha": "2026-11-18", "hora": "11:00", "detalle": "se reagendó 2"}]
         datos = {"formato": dj.FORMATO, "candidatos": [
-            {"nombre": "Anahi Hidalgo", "telefono": "5555 1234", "estado": "En evaluación", "historial": hist}],
+            {"nombre": "Persona Prueba", "telefono": "5555 1234", "estado": "En evaluación", "historial": hist}],
             "programacion": []}
         with tempfile.TemporaryDirectory() as t:
             ruta = os.path.join(t, "datos_iniciales.json")
@@ -1185,7 +1185,7 @@ class PruebasSeleccion(PruebasBase):
             # una persona que ya estaba recibe el historial que le falta, sin tocar lo demás
             bd.eliminar("candidatos", cid)
             self.assertEqual(bd.historial_de(cid), [])
-            nuevo = bd.guardar("candidatos", {"nombre": "Anahi Hidalgo", "telefono": "+502 5555 1234", "estado": "Contratado"})
+            nuevo = bd.guardar("candidatos", {"nombre": "Persona Prueba", "telefono": "+502 5555 1234", "estado": "Contratado"})
             self.assertEqual(dj.importar(ruta, respaldar=False)["historial"], 3)
             self.assertEqual(bd.obtener("candidatos", nuevo)["estado"], "Contratado")
             self.assertEqual(bd.contar_reagendas()[nuevo], (2, 0))
@@ -1200,7 +1200,7 @@ class PruebasSeleccion(PruebasBase):
         import seleccion as sel
         a = api.Api()
         v = a.candidato_obtener(None)["datos"]["valores"]
-        v.update(nombre="Hugo Morales", telefono="5555 7777", fecha_aplicacion="2026-11-20",
+        v.update(nombre="Persona Dos", telefono="5555 7777", fecha_aplicacion="2026-11-20",
                  fecha_prueba="2026-11-20", horario_prueba="10:00")
         i = a.candidato_guardar(None, v)["datos"]["id"]  # primera agenda: no es reagenda
         self.assertEqual(bd.contar_reagendas(), {})
@@ -1242,7 +1242,7 @@ class PruebasSeleccion(PruebasBase):
         ficha = a.candidato_obtener(i)["datos"]
         self.assertEqual(len(ficha["historial"]), 4)
         lista = a.reagendas_listar()["datos"]
-        self.assertEqual(lista["filas"][0]["nombre"], "Hugo Morales")
+        self.assertEqual(lista["filas"][0]["nombre"], "Persona Dos")
         self.assertEqual(lista["kpi"]["eventos"], 4)
         proc = a.proceso()["datos"]
         self.assertEqual(proc["personas"], 1)

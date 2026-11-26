@@ -41,7 +41,7 @@ REAGENDAS = {"pruebas": 2, "entrevistas": 1}
 VENTANA_HORAS = [8, 18]
 
 PARTICULAS = {"de", "del", "la", "las", "los", "y", "e"}
-ERRATAS = {"nataliafflores": "Natalia Flores", "ioana": "Ioana"}
+ERRATAS = {}  # correcciones fijas de nombres mal escritos: {"nombremalescrito": "Nombre correcto"}
 
 
 # ---------------------------------------------------------------- normalización
