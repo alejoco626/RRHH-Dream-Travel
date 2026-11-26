@@ -1144,6 +1144,138 @@ class PruebasSeleccion(PruebasBase):
             self.assertEqual((luis["estado"], luis["observaciones"]), ("Descartado", "uno"))  # vacío no borra
             self.assertEqual(r["actualizados"], 1)
 
+    def tearDown(self):
+        import copy
+        import configuracion
+        configuracion.aplicar(copy.deepcopy(configuracion.ORIGINAL))  # no dejar valores de otra prueba
+
+    def test_reagendas_niveles_y_cambios_de_agenda(self):
+        import seleccion as sel
+        self.assertEqual([sel.nivel_reagenda(n, 2) for n in range(4)], ["ninguna", "uso", "limite", "excedido"])
+        self.assertEqual(sel.nivel_reagenda(1, 1), "limite")
+        r = sel.resumen_reagendas(2, 2)
+        self.assertEqual((r["pruebas"]["nivel"], r["entrevistas"]["nivel"], r["nivel"]), ("limite", "excedido", "excedido"))
+        antes = {"fecha_aplicacion": "2026-11-20", "horario_prueba": "10:00", "fecha_entrevista": "", "hora_entrevista": ""}
+        # sin fecha de prueba propia vale el día de aplicación: poner la misma fecha no es reagenda
+        self.assertEqual(sel.cambios_de_agenda(antes, {**antes, "fecha_prueba": "2026-11-20"}), [])
+        self.assertEqual(len(sel.cambios_de_agenda(antes, {**antes, "horario_prueba": "11:00"})), 1)
+        self.assertEqual(sel.cambios_de_agenda(antes, {**antes, "horario_prueba": ""}), [])  # cancelar no cuenta
+        self.assertEqual(sel.cambios_de_agenda({**antes, "horario_prueba": ""}, {**antes, "horario_prueba": "09:00"}), [])  # la primera
+        self.assertEqual(sel.formato_agenda(("2026-11-26", "15:00")), "26/11/2026 15:00")
+
+    def test_json_conserva_historial_y_cuenta_reagendas(self):
+        import json
+        import datos_json as dj
+        hist = [{"tipo": "postulacion", "fecha": "2026-11-17", "hora": "10:00", "detalle": "Postulación previa"},
+                {"tipo": "prueba", "fecha": "2026-11-17", "hora": "10:00", "detalle": "se reagendó"},
+                {"tipo": "prueba", "fecha": "2026-11-18", "hora": "11:00", "detalle": "se reagendó 2"}]
+        datos = {"formato": dj.FORMATO, "candidatos": [
+            {"nombre": "Anahi Hidalgo", "telefono": "5555 1234", "estado": "En evaluación", "historial": hist}],
+            "programacion": []}
+        with tempfile.TemporaryDirectory() as t:
+            ruta = os.path.join(t, "datos_iniciales.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump(datos, f)
+            self.assertEqual(dj.importar(ruta, respaldar=False, simular=True)["historial"], 3)
+            self.assertEqual(dj.importar(ruta, respaldar=False)["candidatos"], 1)
+            cid = bd.listar("candidatos")[0]["id"]
+            self.assertEqual(bd.contar_reagendas()[cid], (2, 0))
+            self.assertEqual(len(bd.historial_de(cid)), 3)
+            self.assertEqual(dj.importar(ruta, respaldar=False)["historial"], 0)  # no se duplica
+            # una persona que ya estaba recibe el historial que le falta, sin tocar lo demás
+            bd.eliminar("candidatos", cid)
+            self.assertEqual(bd.historial_de(cid), [])
+            nuevo = bd.guardar("candidatos", {"nombre": "Anahi Hidalgo", "telefono": "+502 5555 1234", "estado": "Contratado"})
+            self.assertEqual(dj.importar(ruta, respaldar=False)["historial"], 3)
+            self.assertEqual(bd.obtener("candidatos", nuevo)["estado"], "Contratado")
+            self.assertEqual(bd.contar_reagendas()[nuevo], (2, 0))
+            salida = os.path.join(t, "salida.json")
+            dj.exportar(salida)
+            self.assertEqual(len(dj.leer(salida)["candidatos"][0]["historial"]), 3)
+            bd.eliminar("candidatos", nuevo)
+            self.assertEqual(bd.historial_de(nuevo), [])  # al borrar la persona se borra su historial
+
+    def test_api_reagendar_pide_confirmacion_y_cuenta(self):
+        import api
+        import seleccion as sel
+        a = api.Api()
+        v = a.candidato_obtener(None)["datos"]["valores"]
+        v.update(nombre="Hugo Morales", telefono="5555 7777", fecha_aplicacion="2026-11-20",
+                 fecha_prueba="2026-11-20", horario_prueba="10:00")
+        i = a.candidato_guardar(None, v)["datos"]["id"]  # primera agenda: no es reagenda
+        self.assertEqual(bd.contar_reagendas(), {})
+
+        def cambia(hora, decision=None, entrevista=None):
+            val = dict(a.candidato_obtener(i)["datos"]["valores"], horario_prueba=hora)
+            if entrevista:
+                val.update(fecha_entrevista=entrevista[0], hora_entrevista=entrevista[1])
+            return a.candidato_guardar(i, val, False, decision)["datos"]
+        r = cambia("11:00")
+        self.assertEqual(r["confirmar_reagenda"][0]["total"], 1)
+        self.assertEqual(bd.obtener("candidatos", i)["horario_prueba"], "10:00")  # nada se guardó todavía
+        cambia("11:00", "corregir")
+        self.assertEqual(bd.contar_reagendas(), {})  # corregir no cuenta
+        cambia("12:00", "registrar")
+        self.assertEqual(bd.contar_reagendas()[i], (1, 0))
+        r = cambia("13:00")
+        self.assertFalse(r["confirmar_reagenda"][0]["excede"])
+        self.assertEqual(r["confirmar_reagenda"][0]["nivel"], "limite")  # sería la 2 de 2
+        cambia("13:00", "registrar")  # 2 de 2: el límite
+        r = cambia("14:00")
+        self.assertTrue(r["confirmar_reagenda"][0]["excede"])  # la tercera pasa el máximo
+        self.assertEqual(r["confirmar_reagenda"][0]["maximo"], 2)
+        cambia("14:00", "registrar")
+        fila = a.candidatos()["datos"]["filas"][0]
+        self.assertEqual((fila["reagendas"]["pruebas"]["n"], fila["reagendas"]["nivel"]), (3, "excedido"))
+        # entrevista: máximo 1
+        cambia("14:00", None, ("2026-12-01", "15:00"))  # primera entrevista, no es reagenda
+        val = dict(a.candidato_obtener(i)["datos"]["valores"], hora_entrevista="16:00")
+        r = a.candidato_guardar(i, val)["datos"]["confirmar_reagenda"][0]
+        self.assertEqual((r["tipo"], r["total"], r["maximo"], r["excede"], r["nivel"]), ("entrevista", 1, 1, False, "limite"))
+        a.candidato_guardar(i, val, False, "registrar")
+        val["hora_entrevista"] = "17:00"
+        self.assertTrue(a.candidato_guardar(i, val)["datos"]["confirmar_reagenda"][0]["excede"])
+        # el maximo se cambia en Configuración y la confirmación lo respeta
+        est = a.config_obtener()["datos"]
+        a.config_guardar(dict(est, reagendas_entrevistas=3))
+        self.assertFalse(a.candidato_guardar(i, val)["datos"]["confirmar_reagenda"][0]["excede"])
+        ficha = a.candidato_obtener(i)["datos"]
+        self.assertEqual(len(ficha["historial"]), 4)
+        lista = a.reagendas_listar()["datos"]
+        self.assertEqual(lista["filas"][0]["nombre"], "Hugo Morales")
+        self.assertEqual(lista["kpi"]["eventos"], 4)
+        proc = a.proceso()["datos"]
+        self.assertEqual(proc["personas"], 1)
+        self.assertEqual(sum(x["valor"] for x in proc["reagendas"]), 1)
+
+    def test_configuracion_de_reclutamiento_se_guarda_y_valida(self):
+        import api
+        import configuracion
+        import seleccion as sel
+        a = api.Api()
+        est = a.config_obtener()["datos"]
+        self.assertEqual((est["reagendas_pruebas"], est["reagendas_entrevistas"]), (2, 1))
+        for malo, texto in ((dict(reagendas_pruebas="x"), "número entero"), (dict(umbral_a=0.5, umbral_b=0.7), "Los umbrales"),
+                            (dict(hora_desde=18, hora_hasta=9), "hora de inicio"), (dict(comparables=[]), "al menos una"),
+                            (dict(sel_fuentes=[]), "vacías"), (dict(pruebas_por_hora=0), "entre")):
+            self.assertIn(texto, a.config_guardar(dict(est, **malo))["error"])
+        ok = a.config_guardar(dict(est, reagendas_pruebas="4", pruebas_por_hora=5, umbral_a=0.9, umbral_b=0.6,
+                                   hora_desde=7, hora_hasta=19, comparables=["cv", "ventas"],
+                                   sel_fuentes=["WhatsApp", "TikTok"]))["datos"]
+        self.assertEqual((sel.REAGENDAS["pruebas"], sel.CAPACIDAD["pruebas_por_hora"], sel.UMBRALES["a"]), (4, 5, 0.9))
+        self.assertEqual((sel.VENTANA_HORAS, sel.COMPARABLES, sel.FUENTES), ([7, 19], ["cv", "ventas"], ["WhatsApp", "TikTok"]))
+        self.assertEqual(sel.hora_normal("6:30"), "18:30")
+        # se recuerda al volver a abrir
+        sel.REAGENDAS["pruebas"] = 99
+        configuracion.cargar()
+        self.assertEqual(sel.REAGENDAS["pruebas"], 4)
+        # renombrar una fuente cambia a los candidatos que la usan
+        bd.guardar("candidatos", {"nombre": "Zoe", "fuente": "TikTok", "estado": "Nuevo"})
+        a.config_guardar(dict(ok, sel_fuentes=["WhatsApp", "Tik Tok"]), [{"lista": "sel_fuentes", "viejo": "TikTok", "nuevo": "Tik Tok"}])
+        self.assertEqual(bd.listar("candidatos")[0]["fuente"], "Tik Tok")
+        a.config_restablecer()
+        self.assertEqual((sel.REAGENDAS["pruebas"], sel.UMBRALES["a"], sel.COMPARABLES), (2, 0.85, ["cv", "ventas", "simulacion"]))
+
     def test_api_candidatos_evaluacion_y_programacion(self):
         import api
         a = api.Api()

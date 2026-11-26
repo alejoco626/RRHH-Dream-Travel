@@ -26,7 +26,7 @@ PUESTOS = ["Diseñador/a de ventas", "Asistente al viajero", "Asistente de visa"
 PRUEBAS = [("cv", "Revisión del CV"), ("ventas", "Evaluación de ventas"),
            ("llamada", "Llamada de venta"), ("simulacion", "Simulación de venta"),
            ("bitrix", "Prueba de Bitrix24"), ("excel", "Prueba de Excel")]
-COMPARABLES = ("cv", "ventas", "simulacion")
+COMPARABLES = ["cv", "ventas", "simulacion"]
 UMBRALES = {"a": 0.85, "b": 0.70}
 GRUPOS = ["A: finalista", "B: con potencial", "C: por debajo", "Pendiente de evaluar"]
 
@@ -34,6 +34,11 @@ GRUPOS = ["A: finalista", "B: con potencial", "C: por debajo", "Pendiente de eva
 CAPACIDAD = {"pruebas_por_hora": 3, "pruebas_por_dia": 21, "entrevistas_por_dia": 3,
              "pruebas_horario": "9:00 a. m. a 5:00 p. m. (sin atención de 12:00 a 2:00 p. m.)",
              "entrevistas_horario": "3:00 p. m. a 5:00 p. m."}
+
+# cuántas veces se puede reagendar cada cosa antes de pedir confirmación (se edita en Configuración)
+REAGENDAS = {"pruebas": 2, "entrevistas": 1}
+# horas del día en que se agendan pruebas y entrevistas (3:00 se entiende como 15:00)
+VENTANA_HORAS = [8, 18]
 
 PARTICULAS = {"de", "del", "la", "las", "los", "y", "e"}
 ERRATAS = {"nataliafflores": "Natalia Flores", "ioana": "Ioana"}
@@ -110,8 +115,9 @@ def fecha_normal(v):
         return None
 
 
-def hora_normal(v, ventana=(8, 18)):
+def hora_normal(v, ventana=None):
     """'HH:MM' en 24 h o None. Las pruebas y entrevistas son de día: 3:00 se entiende 15:00."""
+    ventana = ventana or VENTANA_HORAS
     if v is None or v == "":
         return None
     if isinstance(v, (datetime, time)):
@@ -340,6 +346,60 @@ def ronda_de(c, estado):
     if estado in ("Entrevista", "Finalista", "Contratado") or c.get("fecha_entrevista"):
         return "Segunda"
     return r
+
+
+# ---------------------------------------------------------------- reagendas
+def agenda_prueba(c):
+    """(fecha, hora) de la prueba o None. Sin fecha propia, vale el día de aplicación."""
+    hora = c.get("horario_prueba") or ""
+    fecha = c.get("fecha_prueba") or c.get("fecha_aplicacion") or ""
+    return (fecha, hora) if hora else None
+
+
+def agenda_entrevista(c):
+    fecha = c.get("fecha_entrevista") or ""
+    return (fecha, c.get("hora_entrevista") or "") if fecha else None
+
+
+def nivel_reagenda(n, maximo):
+    """ninguna / uso (aún hay margen) / limite (ya usó todas) / excedido (se pasó)."""
+    if n <= 0:
+        return "ninguna"
+    if n > maximo:
+        return "excedido"
+    return "limite" if n == maximo else "uso"
+
+
+def formato_agenda(a):
+    """(fecha ISO, hora) -> '26/11/2026 15:00'."""
+    if not a:
+        return ""
+    f, h = a
+    return ((f"{f[8:10]}/{f[5:7]}/{f[:4]}" if f else "sin fecha") + (f" {h}" if h else "")).strip()
+
+
+NIVELES_REAGENDA = ["ninguna", "uso", "limite", "excedido"]
+
+
+def resumen_reagendas(n_pruebas, n_entrevistas):
+    """Contadores con su máximo, nivel (para el color) y el nivel más alto de los dos."""
+    cuentas = {}
+    for clave, n in (("pruebas", n_pruebas), ("entrevistas", n_entrevistas)):
+        m = int(REAGENDAS[clave])
+        cuentas[clave] = {"n": n, "max": m, "nivel": nivel_reagenda(n, m)}
+    peor = max((c["nivel"] for c in cuentas.values()), key=NIVELES_REAGENDA.index)
+    return {**cuentas, "nivel": peor}
+
+
+def cambios_de_agenda(antes, ahora):
+    """Qué agendas cambian al guardar: lista de (tipo, agenda_anterior, agenda_nueva).
+    Solo es reagenda si ya había una fecha/hora y ahora hay otra distinta."""
+    res = []
+    for tipo, f in (("prueba", agenda_prueba), ("entrevista", agenda_entrevista)):
+        a, b = f(antes), f(ahora)
+        if a and b and a != b:
+            res.append((tipo, a, b))
+    return res
 
 
 # ---------------------------------------------------------------- capacidad por día

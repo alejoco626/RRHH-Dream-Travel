@@ -12,6 +12,29 @@ const claseGrupo = (g) => (g && g.startsWith("A") ? "ok" : g && g.startsWith("B"
 const claseAsist = (a) => (a === "Confirmada" ? "ok" : ["De baja", "No respondió"].includes(a) ? "mal" : ["Reagendar", "Pendiente de confirmar", "Enviar link"].includes(a) ? "av" : "");
 const claseSit = (s) => ({ "Atrasada": "mal", "Hoy": "av", "Próxima": "az", "Cerrada": "" }[s] || "");
 const CORTO = { cv: "CV", ventas: "Ventas", llamada: "Llamada", simulacion: "Simulación", bitrix: "Bitrix24", excel: "Excel" };
+const NIVEL_REAG = { ninguna: ["", "Sin reagendas"], uso: ["av", "Con margen"], limite: ["na", "En el límite"], excedido: ["mal", "Pasó el máximo"] };
+function chipReag(c, tipo) {
+  if (!c || !c.n) return null;
+  return h("span", { class: "chip reag " + NIVEL_REAG[c.nivel][0], title: `Reagendó la ${tipo} ${c.n} de ${c.max} veces permitidas · ${NIVEL_REAG[c.nivel][1]}` }, `↻ ${c.n}/${c.max}`);
+}
+function medidorReag(c, tipo) {
+  const segs = Math.max(c.max, c.n, 1);
+  return h("div", { class: "med-reag" },
+    h("span", { class: "mr-t" }, tipo === "prueba" ? "Prueba" : "Entrevista"),
+    h("div", { class: "seg-reag" }, Array.from({ length: segs }, (_, i) => h("i", { class: i < c.n ? "on " + c.nivel : "" }))),
+    h("span", { class: "mr-n" }, `${c.n} de ${c.max}`), c.n ? chip(NIVEL_REAG[c.nivel][1], NIVEL_REAG[c.nivel][0]) : h("span", { class: "tenue" }, "sin reagendas"));
+}
+function avisoReag(r) {
+  const peores = [["prueba", r.pruebas], ["entrevista", r.entrevistas]].filter(([, c]) => c.nivel === "excedido" || c.nivel === "limite");
+  if (!peores.length) return null;
+  return h("div", { class: "aviso-reag " + r.nivel }, peores.map(([t, c]) => h("div", {}, c.nivel === "excedido"
+    ? `La ${t} ya pasó el máximo de reagendas (${c.max}).` : `Ya usó todas las reagendas de la ${t} (${c.max}). Otra pedirá confirmación.`)));
+}
+function lineaHistorial(lista) {
+  if (!lista.length) return h("div", { class: "tenue" }, "Sin historial: es su primera y única postulación.");
+  const ic = { prueba: "↻ Prueba", entrevista: "↻ Entrevista", postulacion: "📋 Postulación" };
+  return h("ol", { class: "linea" }, lista.map((x) => h("li", { class: x.tipo }, h("b", {}, ic[x.tipo]), " ", h("span", { class: "tenue" }, [fmtF(x.fecha), fmtH(x.hora)].filter(Boolean).join(" · ")), h("div", {}, x.detalle))));
+}
 function chip(t, c) { return h("span", { class: "chip " + (c || "") }, t); }
 function chipPct(v, cfg) { if (v === null || v === undefined) return h("span", { class: "tenue" }, "—"); return chip(pct(v), v >= cfg.umbral_a ? "ok" : v >= cfg.umbral_b ? "av" : "mal"); }
 function campoF(etiqueta, ctrl, { req, completo } = {}) { return h("label", { class: "campo" + (completo ? " completo" : "") }, h("span", { class: req ? "req" : "" }, etiqueta), h("span", { class: "x" }, ctrl)); }
@@ -28,14 +51,15 @@ async function paginaCandidatos(m, ctx) {
   const detalle = h("div", { class: "form tarjeta det" }, h("div", { class: "vacio" }, "Elige un candidato para ver su ficha"));
   const busca = h("input", { placeholder: "Buscar por nombre, teléfono o correo…" });
   const selGrupo = h("select", {}, h("option", { value: "" }, "Todos los grupos"), cfg.grupos.map((g) => h("option", { value: g }, g)));
+  const selReag = h("select", {}, [["", "Todas las reagendas"], ["con", "Con reagendas"], ["limite", "En el límite o más"], ["excedido", "Pasaron el máximo"]].map(([v, t]) => h("option", { value: v }, t)));
   const total = h("div", { class: "total" });
   const pagina = h("div", { class: "pagina" },
-    cabecera(m.titulo, "Registro de candidatos, igual que en el libro: un candidato por fila",
+    cabecera(m.titulo, "Una fila por persona real; lo anterior de quien se repite queda en su historial",
       h("button", { class: "btn fan", onclick: cargarJson }, "Cargar datos (JSON)"),
       h("button", { class: "btn fan", onclick: exportarJson }, "Exportar datos"),
       h("button", { class: "btn pri", onclick: () => editar(null) }, "+ Nuevo candidato")),
     franja,
-    h("div", { class: "cuerpo" }, h("div", { class: "lista tarjeta" }, h("div", { class: "barra" }, busca, selGrupo, total), tabla), detalle));
+    h("div", { class: "cuerpo" }, h("div", { class: "lista tarjeta" }, h("div", { class: "barra" }, busca, selGrupo, selReag, total), tabla), detalle));
 
   async function cargarJson() {
     const e = await intentar(() => llamar("datos_elegir")); if (!e) return;
@@ -66,7 +90,8 @@ async function paginaCandidatos(m, ctx) {
     const cuerpo = r.filas.map((f) => h("tr", { class: "fila-nueva" + (f.id === est.id ? " sel" : ""), onclick: () => abrir(f.id) },
       h("td", { title: f.nombre }, h("b", {}, f.nombre), f.entrevista_hoy ? chip("Hoy", "av") : null, h("small", { class: "sub-nombre" }, f.puesto)),
       h("td", {}, chip(f.asistencia, claseAsist(f.asistencia))), h("td", {}, chip(f.estado, claseEstado(f.estado))),
-      h("td", {}, fmtH(f.horario_prueba)), h("td", {}, [fmtF(f.fecha_entrevista).slice(0, 5), fmtH(f.hora_entrevista)].filter(Boolean).join(" · ")),
+      h("td", {}, fmtH(f.horario_prueba), " ", chipReag(f.reagendas.pruebas, "prueba")),
+      h("td", {}, [fmtF(f.fecha_entrevista).slice(0, 5), fmtH(f.hora_entrevista)].filter(Boolean).join(" · "), " ", chipReag(f.reagendas.entrevistas, "entrevista")),
       h("td", {}, chipPct(f.comparable, cfg)), h("td", {}, f.grupo === "Pendiente de evaluar" ? h("span", { class: "tenue" }, f.hechas ? `Faltan ${f.falta.length}` : "Sin evaluar") : chip(f.grupo.split(":")[0], claseGrupo(f.grupo)))));
     tabla.replaceChildren(h("table", { class: "compacta" }, h("thead", {}, h("tr", {}, cab.map((c) => h("th", {}, c)))), h("tbody", {}, cuerpo)));
     total.textContent = `${r.total} de ${r.todos}`;
@@ -80,12 +105,15 @@ async function paginaCandidatos(m, ctx) {
     const fila = (t, v) => (v ? h("div", { class: "dato" }, h("small", {}, t), h("div", {}, v)) : null);
     const barrasP = h("div", { class: "mini-pruebas" }, cfg.pruebas.map(([k, n]) => h("div", { class: "mp" }, h("small", {}, CORTO[k]), chipPct(f.resultados[k], cfg))));
     const cierres = cfg.estados.filter((e) => e !== f.estado);
+    const histBox = h("details", { class: "hist-det" }, h("summary", {}, "Historial de esta persona"), esqueleto(2));
+    intentar(() => llamar("candidato_obtener", id), true).then((o) => { if (o && est.id === id) histBox.replaceChildren(h("summary", {}, `Historial de esta persona (${o.historial.length})`), lineaHistorial(o.historial)); });
     detalle.replaceChildren(
       h("div", { class: "franja" }),
       h("div", { class: "det-cab" }, h("h2", {}, f.nombre), h("div", {}, chip(f.estado, claseEstado(f.estado)), " ", chip(f.puesto, ""), f.ronda ? chip(f.ronda + " ronda", "") : null)),
       h("div", { class: "det-cuerpo scroll" },
         h("div", { class: "resultado-grande" }, h("div", {}, h("small", {}, "Promedio comparable"), h("b", {}, pct(f.comparable))), h("div", {}, h("small", {}, "Posición"), h("b", {}, f.ranking ? "#" + f.ranking : "—")), h("div", {}, h("small", {}, "Grupo"), chip(f.grupo.split(":")[0] === "Pendiente de evaluar" ? "Sin grupo" : f.grupo, claseGrupo(f.grupo)))),
         barrasP,
+        h("div", { class: "reag-ficha" }, h("small", {}, "Reagendas"), medidorReag(f.reagendas.pruebas, "prueba"), medidorReag(f.reagendas.entrevistas, "entrevista"), avisoReag(f.reagendas), histBox),
         f.falta.length && f.hechas ? h("div", { class: "aviso-falta" }, "Falta registrar: " + f.falta.join(", ").toLowerCase()) : null,
         f.sugerencia ? h("div", { class: "sugerencia" }, h("span", {}, `Siguiente paso sugerido: ${f.sugerencia}`), h("button", { class: "btn pri peq", onclick: () => cambiarEstado(f, f.sugerencia) }, "Aplicar")) : null,
         fila("Teléfono", f.telefono), fila("Correo", f.correo), fila("Fuente", f.fuente), fila("Se postuló", fmtF(f.fecha_aplicacion)),
@@ -131,11 +159,22 @@ async function paginaCandidatos(m, ctx) {
       campoF("Observaciones", (ctl.observaciones = h("textarea", { value: v.observaciones || "" })), { completo: true }),
       campoF("Pendientes por confirmar", (ctl.pendientes = h("textarea", { value: v.pendientes || "", style: { minHeight: "46px" } })), { completo: true }),
       campoF("Motivo del cierre", motivo, { completo: true }));
-    const guardar = async (confirmarDup) => {
+    const guardar = async (confirmarDup, reag) => {
       const vals = {}; for (const k in ctl) vals[k] = ctl[k].value;
-      const r2 = await intentar(() => llamar("candidato_guardar", id, vals, !!confirmarDup)); if (!r2) return false;
-      if (r2.confirmar) { if (!(await confirmar(r2.confirmar + "\n\n¿Guardar de todos modos?", "Posible duplicado", false, "Guardar"))) return false; return guardar(true); }
-      (r2.avisos || []).forEach((a) => toast(a, "info")); toast("Candidato guardado"); est.id = r2.id; await pagina.refrescar(); abrir(r2.id); return true;
+      const r2 = await intentar(() => llamar("candidato_guardar", id, vals, !!confirmarDup, reag || null)); if (!r2) return false;
+      if (r2.confirmar) { if (!(await confirmar(r2.confirmar + "\n\n¿Guardar de todos modos?", "Posible duplicado", false, "Guardar"))) return false; return guardar(true, reag); }
+      if (r2.confirmar_reagenda) {
+        const excede = r2.confirmar_reagenda.some((x) => x.excede);
+        const decision = await modal(excede ? "Se pasa del máximo de reagendas" : "¿Es una reagenda?", h("div", {},
+          h("p", {}, "Cambiaste la fecha u hora de una cita que ya estaba agendada:"),
+          r2.confirmar_reagenda.map((x) => h("div", { class: "aviso-reag " + x.nivel, style: { marginBottom: "8px" } },
+            h("b", {}, x.tipo === "prueba" ? "Prueba" : "Entrevista"), `: de ${x.anterior} a ${x.nueva}.`,
+            h("div", {}, x.excede ? `Sería la reagenda ${x.total}, y el máximo permitido es ${x.maximo}. Pasa el límite.` : `Sería la reagenda ${x.total} de ${x.maximo} permitidas${x.total === x.maximo ? " (la última)" : ""}.`))),
+          h("p", { class: "tenue" }, "Si solo corrigiste un error de escritura, elige «Es una corrección» y no se cuenta.")),
+          [{ texto: "Cancelar", valor: false }, { texto: "Es una corrección", valor: "corregir" }, { texto: excede ? "Registrar de todos modos" : "Registrar reagenda", tipo: excede ? "peligro" : "pri", valor: "registrar" }]);
+        if (!decision) return false; return guardar(true, decision);
+      }
+      (r2.avisos || []).forEach((a) => toast(a, "info")); toast(r2.reagendado && r2.reagendado.length ? "Candidato guardado y reagenda registrada" : "Candidato guardado"); est.id = r2.id; await pagina.refrescar(); abrir(r2.id); return true;
     };
     await modal(id ? "Editar candidato" : "Nuevo candidato", cuerpo, [{ texto: "Cancelar", valor: false }, { texto: "Guardar", tipo: "pri", valor: true, antes: async () => (await guardar()) }], { ancho: "720px" });
   }
@@ -147,6 +186,7 @@ async function paginaCandidatos(m, ctx) {
     const mi = ++ultimo;
     if (!est.datos) { tabla.replaceChildren(esqueleto(9)); }
     const r = await intentar(() => llamar("candidatos", est.buscar, est.estado, est.grupo)); if (!r || mi !== ultimo) return;
+    if (est.reag) { const ok = { con: ["uso", "limite", "excedido"], limite: ["limite", "excedido"], excedido: ["excedido"] }[est.reag]; r.filas = r.filas.filter((f) => ok.includes(f.reagendas.nivel)); r.total = r.filas.length; }
     est.datos = r; pintarFranja(r); pintarTabla(r);
   };
   pagina.abrirRegistro = async (id) => {
@@ -155,6 +195,7 @@ async function paginaCandidatos(m, ctx) {
   };
   busca.addEventListener("input", debounce(() => { est.buscar = busca.value; pagina.refrescar(); }));
   selGrupo.addEventListener("change", () => { est.grupo = selGrupo.value; pagina.refrescar(); });
+  selReag.addEventListener("change", () => { est.reag = selReag.value; pagina.refrescar(); });
   pagina.nuevoCon = async () => editar(null);
   const baseRef = pagina.refrescar;
   pagina.refrescar = async (o) => { await baseRef(o); if (est.id) abrir(est.id); };
@@ -244,23 +285,78 @@ async function paginaMatriz(m, ctx) {
   return pagina;
 }
 
+/* ============================ REAGENDAS ============================ */
+async function paginaReagendas(m, ctx) {
+  const est = { filtro: "", buscar: "", abierto: null, datos: null };
+  const franja = h("div", { class: "franja-etapas" });
+  const cuerpo = h("div", { class: "scroll", style: { flex: 1 } }, skTabla());
+  const busca = h("input", { placeholder: "Buscar candidato…" });
+  const total = h("div", { class: "total" });
+  const leyenda = h("div", { class: "leyenda-reag" });
+  const pagina = h("div", { class: "pagina" },
+    cabecera(m.titulo, "Cada vez que alguien cambia su prueba o entrevista, o se postula de nuevo, queda aquí",
+      h("button", { class: "btn fan", onclick: () => pagina.refrescar() }, "Actualizar")),
+    franja, h("div", { class: "tarjeta", style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } }, h("div", { class: "barra" }, busca, leyenda, total), cuerpo));
+  const OK = { "": ["uso", "limite", "excedido", "ninguna"], con: ["uso", "limite", "excedido"], limite: ["limite"], excedido: ["excedido"] };
+  function pintar() {
+    const r = est.datos; if (!r) return;
+    const k = r.kpi;
+    const items = [["", "Con historial", k.con_historial, ""], ["con", "Con reagendas", k.con_reagendas, "av"], ["limite", "En el límite", k.limite, "na"], ["excedido", "Pasaron el máximo", k.excedidos, "mal"]];
+    const max = Math.max(1, ...items.map((x) => x[2]));
+    franja.replaceChildren(...items.map(([v, t, n, c]) => h("div", { class: "etapa " + c + (est.filtro === v ? " sel" : ""), onclick: () => { est.filtro = est.filtro === v ? "" : v; pintar(); } },
+      h("b", {}, n), h("small", {}, t), h("div", { class: "bar", style: { width: (n / max * 100) + "%" } }))));
+    leyenda.replaceChildren(h("span", { class: "tenue" }, `Máximo permitido: prueba ${r.reagendas.pruebas}, entrevista ${r.reagendas.entrevistas} · `), h("span", { class: "chip av" }, "con margen"), " ", h("span", { class: "chip na" }, "en el límite"), " ", h("span", { class: "chip mal" }, "pasó el máximo"));
+    const q = est.buscar.trim().toLowerCase();
+    const filas = r.filas.filter((f) => OK[est.filtro].includes(f.reagendas.nivel) && (!q || f.nombre.toLowerCase().includes(q)));
+    total.textContent = `${filas.length} de ${r.personas} personas`;
+    if (!filas.length) { cuerpo.replaceChildren(sinFilas(r.filas.length ? "Nadie coincide con el filtro." : "Aún no hay reagendas ni postulaciones repetidas.")); return; }
+    const cuerpoTabla = [];
+    filas.forEach((f) => {
+      const abierto = est.abierto === f.id;
+      cuerpoTabla.push(h("tr", { class: "fila-nueva" + (abierto ? " sel" : ""), onclick: () => { est.abierto = abierto ? null : f.id; pintar(); } },
+        h("td", {}, h("b", {}, f.nombre), h("small", { class: "sub-nombre" }, f.puesto)), h("td", {}, chip(f.estado, claseEstado(f.estado))),
+        h("td", {}, chipReag(f.reagendas.pruebas, "prueba") || h("span", { class: "tenue" }, "—"), " ", h("small", { class: "tenue" }, f.prueba_vigente)),
+        h("td", {}, chipReag(f.reagendas.entrevistas, "entrevista") || h("span", { class: "tenue" }, "—"), " ", h("small", { class: "tenue" }, f.entrevista_vigente)),
+        h("td", {}, f.postulaciones), h("td", {}, h("span", { class: "chip " + NIVEL_REAG[f.reagendas.nivel][0] }, NIVEL_REAG[f.reagendas.nivel][1]))));
+      if (abierto) cuerpoTabla.push(h("tr", { class: "detalle-reag" }, h("td", { colSpan: 6 }, avisoReag(f.reagendas), lineaHistorial(f.historial),
+        h("button", { class: "btn sec peq", onclick: () => ctx.ir("candidatos", { id: f.id }) }, "Abrir su ficha"))));
+    });
+    cuerpo.replaceChildren(h("table", { class: "compacta" }, h("thead", {}, h("tr", {}, ["Candidato", "Estado", "Prueba", "Entrevista", "Postulaciones", "Nivel"].map((c) => h("th", {}, c)))), h("tbody", {}, cuerpoTabla)));
+  }
+  pagina.refrescar = async () => {
+    if (!est.datos) cuerpo.replaceChildren(skTabla());
+    const r = await intentar(() => llamar("reagendas_listar")); if (!r) return; est.datos = r; pintar();
+  };
+  busca.addEventListener("input", debounce(() => { est.buscar = busca.value; pintar(); }));
+  return pagina;
+}
+
 /* ============================ RESUMEN DEL PROCESO ============================ */
-async function paginaProceso(m, ctx) {
+async function paginaProceso(m, ctx, general) {
   const raiz = h("div", { class: "grid-res" });
-  const pagina = h("div", { class: "pagina" }, cabecera(m.titulo, "Cómo va la convocatoria: personas, resultados y lo que sigue"), h("div", { class: "scroll", style: { flex: 1, paddingRight: "6px" } }, raiz));
+  const pagina = h("div", { class: "pagina" }, cabecera(m.titulo, general ? "Personas reales del proceso, reagendas y lo que hay que atender" : "Cómo va la convocatoria: personas, resultados y lo que sigue"), h("div", { class: "scroll", style: { flex: 1, paddingRight: "6px" } }, raiz));
   const kpi = (clase, ic, n, t, sub, ir) => h("div", { class: `tarjeta kpi ${clase}`, style: ir ? { cursor: "pointer" } : {}, onclick: ir }, h("div", { class: "ic" }, ic), h("div", {}, h("div", { class: "num", "data-n": n }, "0"), h("div", {}, t), h("small", {}, sub || "")));
   const anima = () => $$(".num[data-n]", raiz).forEach((n) => { const fin = Number(n.dataset.n), t0 = performance.now(); const paso = (t) => { const p = Math.min(1, (t - t0) / 450); n.textContent = Math.round(fin * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(paso); }; requestAnimationFrame(paso); });
+  const personal = (r) => {
+    const g = r.graficas;
+    return [
+      h("div", { class: "s7" }, tarjeta(`Días de vacaciones por mes (${new Date().getFullYear()})`, columnas(g.vacaciones_mes.map((x) => ({ etiqueta: x.etiqueta, valores: [x.valor] })), { series: [{ nombre: "Días", color: "var(--c4)" }] }), { color: "c4", nota: `${r.tarjetas.vacaciones_anio} solicitudes este año` })),
+      h("div", { class: "s5" }, tarjeta("Personal por departamento", barrasH(g.departamentos.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor })), {}), { nota: `${r.tarjetas.empleados} empleados · ${r.tarjetas.amonestaciones} amonestaciones` })),
+      h("div", { class: "s6" }, tarjeta("Ausencias por etapa", barrasH(g.ausencias.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor })), {}), { nota: `${r.tarjetas.ausencias_abiertas} abiertas`, extra: h("button", { class: "btn fan peq", onclick: () => ctx.ir("ausencias") }, "Abrir") })),
+      h("div", { class: "s6" }, tarjeta("Cumpleaños próximos", r.cumples.length ? r.cumples.map((c) => h("div", { class: "item" }, h("span", {}, "🎂"), h("span", { class: "n" }, c.nombre), h("span", { class: "s" }, `${c.fecha} (${c.dias === 0 ? "hoy" : c.dias === 1 ? "mañana" : "en " + c.dias + " días"})`))) : h("div", { class: "vacio", style: { padding: "14px" } }, `Sin cumpleaños en los próximos ${r.dias_cumple} días.`), { color: "c3" })),
+      h("div", { class: "s6" }, tarjeta("Pendientes de completar", r.pendientes.total ? [r.pendientes.primeros.map((p) => h("div", { class: "item click", onclick: () => ctx.ir(p.tabla, { id: p.id }) }, h("span", { class: "n" }, p.referencia), h("span", { class: "s" }, p.modulo))), r.pendientes.total > 4 ? h("div", { class: "s", style: { color: "var(--sec)", paddingTop: "6px" } }, `y ${r.pendientes.total - 4} más`) : null] : h("div", { class: "vacio", style: { padding: "14px" } }, "Todo al día."), { color: "c2" }))];
+  };
   pagina.refrescar = async () => {
     if (!raiz.children.length) raiz.replaceChildren(...Array.from({ length: 4 }, () => h("div", { class: "tarjeta s3" }, esqueleto(3))));
     const cfg = await configSel();
-    const r = await intentar(() => llamar("proceso")); if (!r) return;
+    const [r, gen] = await Promise.all([intentar(() => llamar("proceso")), general ? intentar(() => llamar("resumen")) : null]); if (!r) return;
     const val = (lista, e) => (lista.find((x) => x.etiqueta === e) || { valor: 0 }).valor;
     const activos = ["Nuevo", "En evaluación", "Entrevista", "Finalista"].reduce((a, e) => a + val(r.estados, e), 0);
     const embudo = ["Nuevo", "En evaluación", "Entrevista", "Finalista", "Contratado"].map((e) => ({ etiqueta: e, valor: val(r.estados, e) }));
     const cierres = ["Descartado", "Declinó"].map((e) => ({ etiqueta: e, valor: val(r.estados, e) }));
     const sinCero = (l) => l.filter((x) => x.valor > 0);
     raiz.replaceChildren(
-      h("div", { class: "s3" }, kpi("", "👥", r.total, "Candidatos", `${activos} en proceso`, () => ctx.ir("candidatos"))),
+      h("div", { class: "s3" }, kpi("", "👥", r.personas, "Personas", `${r.postulaciones} postulaciones · ${activos} en proceso`, () => ctx.ir("candidatos"))),
       h("div", { class: "s3" }, kpi("o", "📞", r.por_confirmar, "Por confirmar", "sin confirmar asistencia", () => ctx.ir("candidatos"))),
       h("div", { class: "s3" }, kpi("v", "⭐", val(r.grupos, "A: finalista"), "Grupo A", `${val(r.grupos, "B: con potencial")} en grupo B`, () => ctx.ir("matriz"))),
       h("div", { class: "s3" }, kpi("m", "✅", val(r.estados, "Contratado"), "Contratados", `${r.con_seis} con las 6 pruebas`)),
@@ -272,7 +368,9 @@ async function paginaProceso(m, ctx) {
       h("div", { class: "s4" }, tarjeta("Fuentes", dona(sinCero(r.fuentes)), { color: "c3", nota: "De dónde llegan" })),
       h("div", { class: "s4" }, tarjeta("Cierres", barrasH(cierres, { color: "var(--c2)" }), { color: "c2", nota: "No continúan en el proceso" })),
       h("div", { class: "s6" }, tarjeta("Asistencia", barrasH(sinCero(r.asistencias), {}), { nota: "Estado de confirmación de todos los candidatos" })),
-      h("div", { class: "s6" }, tarjeta("Convocatorias", barrasH(sinCero(r.por_convocatoria), {}), { color: "c4", nota: "Candidatos por ciclo de publicidad" })));
+      h("div", { class: "s6" }, tarjeta("Convocatorias", barrasH(sinCero(r.por_convocatoria), {}), { color: "c4", nota: "Candidatos por ciclo de publicidad" })),
+      h("div", { class: "s6" }, tarjeta("Reagendas", barrasH(r.reagendas, { color: "var(--c2)" }), { color: "c2", nota: `Máximo: prueba ${cfg.reagendas.pruebas}, entrevista ${cfg.reagendas.entrevistas}`, extra: h("button", { class: "btn fan peq", onclick: () => ctx.ir("reagendas") }, "Ver reagendas") })),
+      ...(gen ? personal(gen) : []));
     anima();
   };
   return pagina;

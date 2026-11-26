@@ -48,11 +48,12 @@ COLUMNAS = {
                    "fuente", "ronda", "estado", "fecha_prueba", "horario_prueba",
                    "fecha_entrevista", "hora_entrevista", "observaciones", "pendientes",
                    "evaluacion", "recomendacion", "lectura", "motivo", "convocatoria"],
+    "historial": ["candidato_id", "tipo", "fecha", "hora", "detalle"],
     "programacion": ["fecha_inicio", "fecha_fin", "actividad", "fase", "responsable", "estado",
                      "reporte", "notas", "convocatoria"],
 }
 CON_EMPLEADO = ("amonestaciones", "vacaciones", "memos", "ausencias")
-VERSION_ESQUEMA = 10
+VERSION_ESQUEMA = 11
 CATEGORIAS_ADJUNTO = ["CV", "Prueba de Excel", "Otro"]
 EXT_ADJUNTOS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".xlsm")
 
@@ -113,6 +114,15 @@ CREATE TABLE IF NOT EXISTS candidatos (
     convocatoria TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_candidatos_estado ON candidatos(estado);
+CREATE TABLE IF NOT EXISTS historial (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidato_id INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    fecha TEXT,
+    hora TEXT,
+    detalle TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_historial_candidato ON historial(candidato_id);
 CREATE TABLE IF NOT EXISTS programacion (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha_inicio TEXT NOT NULL,
@@ -367,7 +377,35 @@ def insertar_varios(tabla, lista):
 def eliminar(tabla, id_registro):
     _validar_tabla(tabla)
     _ejecutar(f"DELETE FROM {tabla} WHERE id = ?", (id_registro,))
+    if tabla == "candidatos":
+        _ejecutar("DELETE FROM historial WHERE candidato_id = ?", (id_registro,))
     _ejecutar("DELETE FROM adjuntos WHERE tabla = ? AND registro_id = ?", (tabla, id_registro))
+
+
+TIPOS_HISTORIAL = ("prueba", "entrevista", "postulacion")
+
+
+def historial_de(candidato_id):
+    """Lo que se fue reagendando o postulando antes, del más antiguo al más reciente."""
+    return _consultar("SELECT * FROM historial WHERE candidato_id = ? ORDER BY id", (candidato_id,))
+
+
+def agregar_historial(candidato_id, tipo, fecha=None, hora=None, detalle=""):
+    if tipo not in TIPOS_HISTORIAL:
+        raise ValueError("Tipo de historial no válido.")
+    return _ejecutar("INSERT INTO historial (candidato_id, tipo, fecha, hora, detalle) "
+                     "VALUES (?, ?, ?, ?, ?)", (candidato_id, tipo, fecha or "", hora or "",
+                                                 detalle or ""))
+
+
+def contar_reagendas():
+    """{candidato_id: (reagendas de prueba, reagendas de entrevista)}."""
+    cuentas = {}
+    for f in _consultar("SELECT candidato_id, tipo, COUNT(*) AS n FROM historial "
+                        "WHERE tipo IN ('prueba', 'entrevista') GROUP BY candidato_id, tipo"):
+        p, e = cuentas.get(f["candidato_id"], (0, 0))
+        cuentas[f["candidato_id"]] = (p + f["n"], e) if f["tipo"] == "prueba" else (p, e + f["n"])
+    return cuentas
 
 
 def adjuntos_de(tabla, id_registro):
@@ -500,7 +538,7 @@ def ruta_archivo(nombre):
 
 _RENOMBRABLES = {("embudo", "plaza"), ("pruebas", "puesto"), ("entrevistas", "puesto"),
                  ("empleados", "departamento"), ("empleados", "grupo"), ("empleados", "puesto"), ("memos", "tema"), ("ausencias", "tipo"), ("ausencias", "etapa"),
-                 ("adjuntos", "categoria")}
+                 ("adjuntos", "categoria"), ("candidatos", "fuente"), ("candidatos", "puesto"), ("programacion", "responsable")}
 
 
 def renombrar_valor(tabla, columna, viejo, nuevo):

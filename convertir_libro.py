@@ -186,6 +186,49 @@ def _calendario(wb):
     return res
 
 
+def _agenda_de_fila(x):
+    """(fecha, hora) de la prueba y de la entrevista de una fila cruda del libro."""
+    f_ap = sel.fecha_normal(x["fecha_aplicacion_crudo"]) or ""
+    hora = sel.hora_normal(x.get("horario_crudo")) or ""
+    f_en = sel.fecha_normal(x.get("entrevista_crudo")) or ""
+    h_en = sel.hora_normal(x.get("hora_entrevista_crudo")) or "" if f_en else ""
+    return ((f_ap, hora) if hora else None), ((f_en, h_en) if f_en else None)
+
+
+def _fmt(f, h):
+    return (f"{f[8:10]}/{f[5:7]}/{f[:4]}" if f else "sin fecha") + (f" {h}" if h else "")
+
+
+def _historial(c):
+    """Todo lo anterior de una persona repetida: cada postulación previa y cada agenda que se
+    cambió (esas cuentan como reagendas)."""
+    todas = c.get("_todas") or []
+    if len(todas) < 2:
+        return []
+    res = []
+    for x in c["_previas"]:
+        prueba, entrevista = _agenda_de_fila(x)
+        partes = [f"Estado: {sel.estado_normal(x['estado']) or 'sin estado'}"]
+        for rot, v in (("Asistencia", sel.asistencia_normal(x["asistencia"])), ("Ronda", x["ronda"]),
+                       ("Obs.", x["observaciones"])):
+            if v:
+                partes.append(f"{rot}: {v}")
+        res.append({"tipo": "postulacion", "fecha": sel.fecha_normal(x["fecha_aplicacion_crudo"]) or "",
+                    "hora": prueba[1] if prueba else "",
+                    "detalle": f"Postulación previa (fila {x['fila']}). " + " · ".join(partes)})
+    for clave, tipo in ((0, "prueba"), (1, "entrevista")):
+        agendas = []
+        for x in todas:  # las agendas distintas, en orden; la última es la vigente
+            a = _agenda_de_fila(x)[clave]
+            if a and a not in agendas:
+                agendas.append(a)
+        for a in agendas[:-1]:
+            res.append({"tipo": tipo, "fecha": a[0], "hora": a[1],
+                        "detalle": f"{'Prueba' if tipo == 'prueba' else 'Entrevista'} agendada "
+                                   f"para {_fmt(*a)}; se reagendó"})
+    return res
+
+
 def convertir(ruta_xlsx, ruta_json, ruta_informe):
     wb = openpyxl.load_workbook(ruta_xlsx, data_only=True)
     informe = {"cambios": [], "conflictos": [], "revisar": []}
@@ -217,13 +260,20 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
         if id(lst) in vistos:
             continue
         vistos.add(id(lst))
+        # orden cronológico: por fecha de aplicación y, si empatan, por fila del libro
+        lst.sort(key=lambda x: (sel.fecha_normal(x["fecha_aplicacion_crudo"]) or "", x["fila"]))
         base = lst[-1]  # la fila más reciente manda
+        base["_previas"] = lst[:-1]
+        base["_todas"] = lst
         if len(lst) > 1:
             informe["cambios"].append(
-                f"Duplicado unido: {base['nombre']} (filas {', '.join(str(x['fila']) for x in lst)})")
-            for x in lst[:-1]:
-                for campo in ("observaciones", "correo", "telefono", "fuente", "puesto"):
-                    if not base.get(campo) and x.get(campo):
+                f"Repetido unido: {base['nombre']} (filas {', '.join(str(x['fila']) for x in lst)}); "
+                "las filas anteriores quedan en su historial")
+            for x in reversed(lst[:-1]):  # lo más reciente primero: completa lo que falte
+                for campo in ("observaciones", "correo", "telefono", "fuente", "puesto",
+                              "horario_crudo", "entrevista_crudo",
+                              "hora_entrevista_crudo"):
+                    if not base.get(campo) and x.get(campo) not in (None, ""):
                         base[campo] = x[campo]
                 if x["observaciones"] and x["observaciones"] != base["observaciones"]:
                     base["observaciones"] = (x["observaciones"] + " | " + base["observaciones"]).strip(" |")
@@ -286,7 +336,7 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
         c["fuente"] = c["fuente"] or "Otro"
         c["observaciones"] = c["observaciones"]
         # horario de la prueba: el libro solo guarda la hora; la fecha de prueba = día de aplicación
-        c["fecha_prueba"] = None
+        c["fecha_prueba"] = f_ap if c["horario_prueba"] else None
         estado_orig = sel.estado_normal(c["estado"])
         estado, motivo = sel.clasificar_estado(c, hay_evaluacion=c["_det"] is not None)
         if estado != estado_orig:
@@ -306,12 +356,13 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
             "nombre": c["nombre"], "puesto": c["puesto"], "fecha_aplicacion": f_ap,
             "telefono": c["telefono"], "asistencia": c["asistencia"], "correo": c["correo"],
             "fuente": c["fuente"], "ronda": c["ronda"], "estado": estado,
-            "fecha_prueba": None, "horario_prueba": c["horario_prueba"],
+            "fecha_prueba": c["fecha_prueba"], "horario_prueba": c["horario_prueba"],
             "fecha_entrevista": c["fecha_entrevista"], "hora_entrevista": c["hora_entrevista"],
             "observaciones": c["observaciones"] + (f" | Entrevista: {texto_ent}" if texto_ent else ""),
             "pendientes": c["pendientes"],
             "evaluacion": ev_json(c["_det"]) if c["_det"] else "",
             "recomendacion": "", "lectura": "", "motivo": c["motivo"],
+            "historial": _historial(c),
             "_grupo": g, "_origen": c["_origen"]})
 
     prog = _programacion(wb)
@@ -324,7 +375,7 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
     datos = {"formato": FORMATO, "generado": datetime.now().isoformat(timespec="seconds"),
              "origen": ruta_xlsx.replace("\\", "/").split("/")[-1],
              "parametros": {"umbral_a": sel.UMBRALES["a"], "umbral_b": sel.UMBRALES["b"],
-                            "capacidad": sel.CAPACIDAD},
+                            "capacidad": sel.CAPACIDAD, "reagendas": sel.REAGENDAS},
              "criterios": [{"nombre": s["nombre"], "global": s["global"],
                             "criterios": [{"criterio": c, "maximo": m} for c, m in s["criterios"]]}
                            for s in ev.SECCIONES],

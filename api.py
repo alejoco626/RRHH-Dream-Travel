@@ -171,8 +171,8 @@ COLUMNAS = {
 MODULOS = {
     "resumen": dict(titulo="Resumen", grupo="", tipo="resumen"),
     "candidatos": dict(grupo="Reclutamiento", titulo="Candidatos", tipo="candidatos"),
+    "reagendas": dict(grupo="Reclutamiento", titulo="Reagendas", tipo="reagendas"),
     "matriz": dict(grupo="Reclutamiento", titulo="Matriz y ranking", tipo="matriz"),
-    "proceso": dict(grupo="Reclutamiento", titulo="Resumen del proceso", tipo="proceso"),
     "programacion": dict(grupo="Reclutamiento", titulo="Programación", tipo="programacion"),
     "embudo": dict(tabla="embudo", estado="Activo", grupo="Selección", titulo="Embudo de confirmados",
                    sub="Personas que confirmaron su asistencia a las pruebas o a la entrevista",
@@ -231,6 +231,9 @@ RENOMBRES = {
     "etapas_ausencia": lambda v, n: bd.renombrar_valor("ausencias", "etapa", v, n),
     "categorias_adjunto": lambda v, n: bd.renombrar_valor("adjuntos", "categoria", v, n),
     "grupos": lambda v, n: bd.renombrar_valor("empleados", "grupo", v, n),
+    "sel_fuentes": lambda v, n: bd.renombrar_valor("candidatos", "fuente", v, n),
+    "sel_puestos": lambda v, n: bd.renombrar_valor("candidatos", "puesto", v, n),
+    "sel_responsables": lambda v, n: bd.renombrar_valor("programacion", "responsable", v, n),
 }
 
 
@@ -1167,6 +1170,38 @@ class Api:
                         raise ValueError
                 except (TypeError, ValueError):
                     raise ValueError(f"El máximo de «{crit[0]}» debe ser un número mayor que 0.")
+        for clave in ("sel_fuentes", "sel_puestos", "sel_responsables"):
+            if clave in estado and not [x for x in estado[clave] if str(x).strip()]:
+                raise ValueError("Las listas no pueden quedar vacías.")
+        if "umbral_a" in estado:
+            try:
+                ua, ub = float(estado["umbral_a"]), float(estado["umbral_b"])
+            except (TypeError, ValueError):
+                raise ValueError("Los umbrales deben ser números.")
+            if not 0 < ub < ua <= 1:
+                raise ValueError("Los umbrales deben cumplir: 0 < B < A ≤ 100 %.")
+        for clave, nombre, minimo in (("reagendas_pruebas", "Las reagendas de pruebas", 0),
+                                      ("reagendas_entrevistas", "Las reagendas de entrevistas", 0),
+                                      ("pruebas_por_hora", "Las pruebas por hora", 1),
+                                      ("entrevistas_por_dia", "Las entrevistas por día", 1)):
+            if clave in estado:
+                try:
+                    n = int(estado[clave])
+                except (TypeError, ValueError):
+                    raise ValueError(f"{nombre} deben ser un número entero.")
+                if not minimo <= n <= 100:
+                    raise ValueError(f"{nombre} deben estar entre {minimo} y 100.")
+                estado[clave] = n
+        if "hora_desde" in estado:
+            try:
+                desde, hasta = int(estado["hora_desde"]), int(estado["hora_hasta"])
+            except (TypeError, ValueError):
+                raise ValueError("Las horas del día deben ser números enteros (0 a 24).")
+            if not 0 <= desde < hasta <= 24:
+                raise ValueError("La hora de inicio debe ser menor que la de fin.")
+            estado["hora_desde"], estado["hora_hasta"] = desde, hasta
+        if "comparables" in estado and not estado["comparables"]:
+            raise ValueError("Elige al menos una prueba para el promedio comparable.")
         configuracion.aplicar(estado)
         configuracion.guardar()
         return configuracion._estado()
@@ -1323,11 +1358,7 @@ class Api:
     # ------------------------------------------------------------------ reclutamiento
     @staticmethod
     def _umbrales():
-        try:
-            p = json.loads(bd.leer_config("parametros_seleccion", "{}") or "{}")
-        except ValueError:
-            p = {}
-        return p.get("umbral_a", sel.UMBRALES["a"]), p.get("umbral_b", sel.UMBRALES["b"])
+        return sel.UMBRALES["a"], sel.UMBRALES["b"]
 
     def _matriz_filas(self):
         ua, ub = self._umbrales()
@@ -1342,7 +1373,7 @@ class Api:
                 "puestos": sel.PUESTOS, "pruebas": [[k, n] for k, n in sel.PRUEBAS],
                 "grupos": sel.GRUPOS, "fases": sel.FASES, "estados_act": sel.ESTADOS_ACT,
                 "responsables": sel.RESPONSABLES, "umbral_a": ua, "umbral_b": ub,
-                "capacidad": sel.CAPACIDAD, "escala": ev.ESCALA,
+                "capacidad": sel.CAPACIDAD, "escala": ev.ESCALA, "reagendas": sel.REAGENDAS,
                 "secciones": [{"nombre": s["nombre"], "global": s["global"],
                                "criterios": [[c, m] for c, m in s["criterios"]]}
                               for s in ev.SECCIONES]}
@@ -1353,6 +1384,7 @@ class Api:
         por_id = {c["id"]: c for c in cands}
         buscar = (buscar or "").strip().lower()
         hoy = date.today().isoformat()
+        cuentas = bd.contar_reagendas()
         salida = []
         for f in filas:
             c = por_id[f["id"]]
@@ -1380,7 +1412,8 @@ class Api:
                 "grupo": f["grupo"], "comparable": f["comparable"], "ranking": f["ranking"],
                 "hechas": f["hechas"], "resultados": f["resultados"], "falta": f["falta"],
                 "sugerencia": f["sugerencia"], "recomendacion": f["recomendacion"],
-                "entrevista_hoy": c.get("fecha_entrevista") == hoy})
+                "entrevista_hoy": c.get("fecha_entrevista") == hoy,
+                "reagendas": sel.resumen_reagendas(*cuentas.get(c["id"], (0, 0)))})
         cuenta = {e: sum(1 for c in cands if c["estado"] == e) for e in sel.ESTADOS}
         return {"filas": salida, "total": len(salida), "por_estado": cuenta,
                 "todos": len(cands)}
@@ -1397,9 +1430,14 @@ class Api:
         c = bd.obtener("candidatos", id_registro)
         if c is None:
             raise ValueError("El candidato ya no existe.")
+        hist = bd.historial_de(id_registro)
+        n_p = sum(1 for h in hist if h["tipo"] == "prueba")
+        n_e = sum(1 for h in hist if h["tipo"] == "entrevista")
         return {"id": id_registro,
                 "valores": {k: ("" if c.get(k) is None else c[k]) for k in bd.COLUMNAS["candidatos"]
-                            if k not in ("evaluacion", "recomendacion", "lectura")}}
+                            if k not in ("evaluacion", "recomendacion", "lectura")},
+                "reagendas": sel.resumen_reagendas(n_p, n_e),
+                "historial": [{k: h[k] for k in ("tipo", "fecha", "hora", "detalle")} for h in hist]}
 
     def _avisos_candidato(self, d, id_actual):
         avisos = []
@@ -1420,7 +1458,7 @@ class Api:
         return avisos
 
     @seguro
-    def candidato_guardar(self, id_actual, valores, confirmar_duplicado=False):
+    def candidato_guardar(self, id_actual, valores, confirmar_duplicado=False, reagenda=None):
         d = {}
         d["nombre"] = sel.nombre_normal(valores.get("nombre"))
         if not d["nombre"]:
@@ -1451,8 +1489,28 @@ class Api:
         duplicado = [a for a in avisos if a.startswith("Ya existe")]
         if duplicado and not confirmar_duplicado:
             return {"confirmar": duplicado[0], "avisos": avisos}
+        antes = bd.obtener("candidatos", id_actual) if id_actual else None
+        cambios = sel.cambios_de_agenda(antes, {**antes, **d}) if antes else []
+        if cambios and reagenda not in ("registrar", "corregir"):
+            hechas = dict(zip(("prueba", "entrevista"), bd.contar_reagendas().get(id_actual, (0, 0))))
+            info = []
+            for tipo, a, b in cambios:
+                maximo = sel.REAGENDAS["pruebas" if tipo == "prueba" else "entrevistas"]
+                total = hechas[tipo] + 1
+                info.append({"tipo": tipo, "anterior": sel.formato_agenda(a),
+                             "nueva": sel.formato_agenda(b), "hechas": hechas[tipo],
+                             "total": total, "maximo": maximo, "excede": total > maximo,
+                             "nivel": sel.nivel_reagenda(total, maximo)})
+            return {"confirmar_reagenda": info, "avisos": avisos}
         nuevo = bd.guardar("candidatos", d, id_actual)
-        return {"id": nuevo, "avisos": [a for a in avisos if a not in duplicado]}
+        if reagenda == "registrar":
+            for tipo, a, b in cambios:
+                bd.agregar_historial(
+                    nuevo, tipo, a[0], a[1],
+                    f"{'Prueba' if tipo == 'prueba' else 'Entrevista'} agendada para "
+                    f"{sel.formato_agenda(a)}; se reagendó para {sel.formato_agenda(b)}")
+        return {"id": nuevo, "avisos": [a for a in avisos if a not in duplicado],
+                "reagendado": [t for t, _, _ in cambios] if reagenda == "registrar" else []}
 
     @seguro
     def candidato_eliminar(self, id_registro):
@@ -1535,11 +1593,54 @@ class Api:
         r["por_confirmar"] = sum(1 for c in cands if c["estado"] in sel.ACTIVOS
                                  and c.get("asistencia") in ("Sin contactar", "Enviar link",
                                                               "Pendiente de confirmar", "Reagendar"))
+        cuentas = bd.contar_reagendas()
+        niveles = {n: 0 for n in sel.NIVELES_REAGENDA}
+        for c in cands:
+            niveles[sel.resumen_reagendas(*cuentas.get(c["id"], (0, 0)))["nivel"]] += 1
+        r["reagendas"] = [{"etiqueta": t, "valor": niveles[k]} for k, t in (
+            ("ninguna", "Sin reagendas"), ("uso", "Con reagendas"),
+            ("limite", "En el límite"), ("excedido", "Pasaron el máximo"))]
+        r["personas"] = len(cands)
+        r["postulaciones"] = len(cands) + sum(
+            1 for h in bd._consultar("SELECT id FROM historial WHERE tipo = 'postulacion'"))
         r["por_convocatoria"] = [{"etiqueta": k, "valor": v} for k, v in sorted(
             {c.get("convocatoria") or "Sin convocatoria": 0 for c in cands}.items())]
         for it in r["por_convocatoria"]:
             it["valor"] = sum(1 for c in cands if (c.get("convocatoria") or "Sin convocatoria") == it["etiqueta"])
         return r
+
+    @seguro
+    def reagendas_listar(self):
+        """Todo lo que se reagendó o se postuló de nuevo, persona por persona."""
+        cands = bd.listar("candidatos")
+        por_id = {}
+        for h in bd._consultar("SELECT * FROM historial ORDER BY id"):
+            por_id.setdefault(h["candidato_id"], []).append(h)
+        filas, eventos = [], 0
+        for c in cands:
+            hist = por_id.get(c["id"], [])
+            if not hist:
+                continue
+            n_p = sum(1 for h in hist if h["tipo"] == "prueba")
+            n_e = sum(1 for h in hist if h["tipo"] == "entrevista")
+            res = sel.resumen_reagendas(n_p, n_e)
+            eventos += n_p + n_e
+            filas.append({
+                "id": c["id"], "nombre": c["nombre"], "estado": c["estado"],
+                "puesto": c.get("puesto") or "", "reagendas": res,
+                "postulaciones": 1 + sum(1 for h in hist if h["tipo"] == "postulacion"),
+                "prueba_vigente": sel.formato_agenda(sel.agenda_prueba(c)),
+                "entrevista_vigente": sel.formato_agenda(sel.agenda_entrevista(c)),
+                "historial": [{k: h[k] for k in ("tipo", "fecha", "hora", "detalle")} for h in hist]})
+        filas.sort(key=lambda f: (-sel.NIVELES_REAGENDA.index(f["reagendas"]["nivel"]),
+                                  -(f["reagendas"]["pruebas"]["n"] + f["reagendas"]["entrevistas"]["n"]),
+                                  f["nombre"]))
+        cuenta = lambda nivel: sum(1 for f in filas if f["reagendas"]["nivel"] == nivel)
+        return {"filas": filas, "personas": len(cands), "reagendas": sel.REAGENDAS,
+                "kpi": {"con_historial": len(filas), "con_reagendas": sum(
+                            1 for f in filas if f["reagendas"]["nivel"] != "ninguna"),
+                        "limite": cuenta("limite"), "excedidos": cuenta("excedido"),
+                        "eventos": eventos}}
 
     # --- programación (embudo aparte)
     @seguro
@@ -1686,7 +1787,8 @@ class Api:
         a, b = float(umbral_a), float(umbral_b)
         if not (0 < b < a <= 1):
             raise ValueError("Los umbrales deben cumplir: 0 < B < A ≤ 100 %.")
-        bd.guardar_config("parametros_seleccion", json.dumps({"umbral_a": a, "umbral_b": b}))
+        sel.UMBRALES["a"], sel.UMBRALES["b"] = a, b
+        configuracion.guardar()
         return True
 
     @seguro

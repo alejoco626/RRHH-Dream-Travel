@@ -16,6 +16,15 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.0": {
+        "nuevo": ["Nueva sección «Reagendas»: cuántas veces cada persona cambió su prueba o entrevista, con colores y su historial",
+                  "Si cambias la fecha u hora de una cita ya agendada, la app pregunta si es una reagenda y avisa al pasar el máximo",
+                  "Los candidatos repetidos conservan todo lo anterior en su historial (cada postulación y cada cita cambiada)",
+                  "En Configuración: máximo de reagendas, capacidad, horarios, umbrales, pruebas del promedio y listas de candidatos"],
+        "cambios": ["«Resumen» y «Resumen del proceso» ahora son uno solo y muestra la cantidad real de personas",
+                    "El JSON incluye el historial y se puede cargar sin duplicar nada"],
+        "correcciones": ["Al unir repetidos ya no se pierde la entrevista agendada si la fila más nueva no la tenía"],
+    },
     "1.3.2": {
         "cambios": ["La tabla de Candidatos es más compacta y se ve completa junto al panel lateral"],
         "correcciones": ["Ya no aparece la palabra «null» al final de Matriz y ranking ni en el Resumen"],

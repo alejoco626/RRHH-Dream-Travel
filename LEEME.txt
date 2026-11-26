@@ -143,3 +143,12 @@ SI UN BOTÓN FALLA
 TECLADO
   Enter pasa a la casilla siguiente en todos los formularios (en las cajas de texto
   largo crea una línea nueva). Las fechas ponen las diagonales solas: escribe 19112026.
+
+
+REAGENDAS Y MAXIMOS (v1.4.0)
+- «Reagendas» (menú Reclutamiento) lista a quienes cambiaron su prueba o entrevista, o se postularon de nuevo.
+- Colores: amarillo = con margen, naranja = ya usó todas las permitidas, rojo = pasó el máximo.
+- Al editar un candidato y cambiar la fecha u hora de una cita ya agendada, la app pregunta si es una reagenda
+  o solo una corrección; si pasa el máximo, pide confirmar.
+- El máximo (prueba 2, entrevista 1), la capacidad, los horarios, los umbrales A/B y las listas se cambian
+  en Configuración > Reclutamiento.

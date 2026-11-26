@@ -6,42 +6,6 @@ function tarjeta(titulo, cuerpo, { color = "", nota, extra, clase = "" } = {}) {
   return h("div", { class: `tarjeta ${color} ${clase}` }, h("div", { class: "franja" }), h("div", { class: "tit" }, h("h3", {}, titulo), extra ? h("span", { style: { marginLeft: "auto" } }, extra) : null), nota ? h("div", { class: "nota" }, nota) : null, h("div", { class: "int" }, cuerpo));
 }
 
-/* ======= Resumen ======= */
-async function paginaResumen(ctx) {
-  const raiz = h("div", { class: "grid-res" });
-  const pagina = h("div", { class: "pagina" }, cabecera("Resumen", "Lo que hay que atender hoy y cómo va el proceso"), h("div", { class: "scroll", style: { flex: 1, paddingRight: "6px" } }, raiz));
-  const kpi = (clase, ic, num, txt, sub, ir) => h("div", { class: `tarjeta kpi ${clase}`, style: ir ? { cursor: "pointer" } : {}, onclick: ir }, h("div", { class: "ic" }, ic), h("div", {}, h("div", { class: "num", "data-n": num }, "0"), h("div", {}, txt), h("small", {}, sub || "")));
-  const anima = (el) => $$(".num[data-n]", el).forEach((n) => { const fin = Number(n.dataset.n), t0 = performance.now(); const paso = (t) => { const p = Math.min(1, (t - t0) / 450); n.textContent = Math.round(fin * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(paso); }; requestAnimationFrame(paso); });
-  const lista = (items, vacio, accion) => items.length ? items.map((r) => h("div", { class: "item" + (accion ? " click" : "") , onclick: accion ? () => accion(r) : null }, h("span", { class: "dot " + (r.tipo === "Entrevista" ? "e" : "") }), h("span", { class: "n" }, r.nombre), h("span", { class: "s" }, [r.etapa.replace("Prueba de habilidades", "Habilidades").replace("Pruebas psicométricas", "Psicométricas"), r.hora].filter(Boolean).join(" · ")))) : h("div", { class: "vacio", style: { padding: "14px" } }, vacio);
-
-  pagina.refrescar = async () => {
-    if (!raiz.children.length) raiz.replaceChildren(...Array.from({ length: 4 }, () => h("div", { class: "tarjeta s3" }, esqueleto(3))));
-    const r = await intentar(() => llamar("resumen")); if (!r) return;
-    const g = r.graficas;
-    const t = (c) => `${c.Prueba} prueba${c.Prueba !== 1 ? "s" : ""} · ${c.Entrevista} entrevista${c.Entrevista !== 1 ? "s" : ""}`;
-    const marcar = async (x) => { if (x.origen !== "embudo") { ctx.ir("pruebas"); return; } const a = await intentar(() => llamar("accion", "embudo", "marcar_recibido", x.id)); if (a) { toast(a.mensaje); pagina.refrescar(); ctx.insignias(); } };
-    raiz.replaceChildren(
-      h("div", { class: "s3" }, kpi("", "📅", r.hoy.length, "Para hoy", t(r.conteo_hoy))),
-      h("div", { class: "s3" }, kpi("o", "🗓", r.manana.length, "Para mañana", t(r.conteo_manana))),
-      h("div", { class: "s3" }, kpi("m", "⏰", r.atrasados.length, "Atrasados", "sin marcar como recibidos")),
-      h("div", { class: "s3" }, kpi("v", "📎", r.pendientes.total, "Documentos pendientes", "falta subir su archivo", () => ctx.ir("pendientes"))),
-      h("div", { class: "s6" }, tarjeta("Hoy", lista(r.hoy, "Nada agendado para hoy."), { nota: "Pruebas y entrevistas de hoy" })),
-      h("div", { class: "s6" }, tarjeta("Mañana", lista(r.manana, "Nada agendado para mañana."), { color: "c3", nota: "Para ir confirmando" })),
-      h("div", { class: "s8" }, tarjeta("Próximos 14 días", columnas(g.agenda.map((d) => ({ etiqueta: d.etiqueta, valores: [d.pruebas, d.entrevistas] })), { series: [{ nombre: "Pruebas", color: "var(--c1)" }, { nombre: "Entrevistas", color: "var(--c2)" }] }), { nota: `${r.total_por_venir} por venir en total · ${r.total_activos} activos` })),
-      h("div", { class: "s4" }, tarjeta("Embudo de selección", dona(g.embudo.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor }))), { color: "c2", nota: "Candidatos activos por etapa" })),
-      r.atrasados.length ? h("div", { class: "s12" }, tarjeta("Atrasados", r.atrasados.map((x) => h("div", { class: "item" }, h("span", { class: "dot e" }), h("span", { class: "n" }, x.nombre), h("span", { class: "s" }, `${x.etapa} · ${x.fecha} · ${x.texto}`), h("button", { class: "btn sec peq", onclick: () => marcar(x) }, x.origen === "embudo" ? "Marcar recibido" : "Abrir"))), { color: "c2", nota: "Fecha vencida sin confirmar que asistieron" })) : null,
-      h("div", { class: "s6" }, tarjeta("Ranking de candidatos", barrasH(g.ranking.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor })), { formato: (v) => fmtNum(v) + " %", max: 100 }), { color: "c4", nota: "Mejores notas de la prueba de habilidades", extra: h("button", { class: "btn fan peq", onclick: () => ctx.ir("ranking") }, "Ver todo") })),
-      h("div", { class: "s6" }, tarjeta("Ausencias por etapa", barrasH(g.ausencias.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor })), {}), { nota: `${r.tarjetas.ausencias_abiertas} abiertas`, extra: h("button", { class: "btn fan peq", onclick: () => ctx.ir("ausencias") }, "Abrir") })),
-      h("div", { class: "s7" }, tarjeta(`Días de vacaciones por mes (${new Date().getFullYear()})`, columnas(g.vacaciones_mes.map((x) => ({ etiqueta: x.etiqueta, valores: [x.valor] })), { series: [{ nombre: "Días", color: "var(--c4)" }] }), { color: "c4", nota: `${r.tarjetas.vacaciones_anio} solicitudes este año` })),
-      h("div", { class: "s5" }, tarjeta("Personal por departamento", barrasH(g.departamentos.map((x) => ({ etiqueta: x.etiqueta, valor: x.valor })), {}), { nota: `${r.tarjetas.empleados} empleados · ${r.tarjetas.amonestaciones} amonestaciones` })),
-      h("div", { class: "s6" }, tarjeta("Cumpleaños próximos", r.cumples.length ? r.cumples.map((c) => h("div", { class: "item" }, h("span", {}, "🎂"), h("span", { class: "n" }, c.nombre), h("span", { class: "s" }, `${c.fecha} (${c.dias === 0 ? "hoy" : c.dias === 1 ? "mañana" : "en " + c.dias + " días"})`))) : h("div", { class: "vacio", style: { padding: "14px" } }, `Sin cumpleaños en los próximos ${r.dias_cumple} días.`), { color: "c3" })),
-      h("div", { class: "s6" }, tarjeta("Pendientes de completar", r.pendientes.total ? [r.pendientes.primeros.map((p) => h("div", { class: "item click", onclick: () => ctx.ir(p.tabla, { id: p.id }) }, h("span", { class: "n" }, p.referencia), h("span", { class: "s" }, p.modulo))), r.pendientes.total > 4 ? h("div", { class: "s", style: { color: "var(--sec)", paddingTop: "6px" } }, `y ${r.pendientes.total - 4} más`) : null] : h("div", { class: "vacio", style: { padding: "14px" } }, "Todo al día."), { color: "c2" }))
-    );
-    anima(raiz);
-  };
-  return pagina;
-}
-
 /* ======= Ranking ======= */
 async function paginaRanking(ctx) {
   const st = { plaza: "", incluir: false };
@@ -159,7 +123,7 @@ async function paginaRespaldos(ctx) {
 async function paginaConfiguracion(ctx) {
   let cfg = null; const renombres = [];
   const cont = h("div", { class: "cfg" });
-  const LISTAS = [["plazas", "Plazas disponibles", "Plazas en las que se reciben candidatos."], ["puestos", "Puestos de empleados", "Cargos que se asignan a los empleados."], ["departamentos", "Departamentos", "Departamentos de los empleados."],
+  const LISTAS = [["sel_puestos", "Puestos de los candidatos", "Puestos a los que aplican los candidatos."], ["sel_fuentes", "Fuentes de los candidatos", "De dónde llegan los candidatos."], ["sel_responsables", "Responsables de la programación", "Personas a cargo de cada actividad."], ["plazas", "Plazas disponibles", "Plazas en las que se reciben candidatos."], ["puestos", "Puestos de empleados", "Cargos que se asignan a los empleados."], ["departamentos", "Departamentos", "Departamentos de los empleados."],
     ["temas_memo", "Temas de memorándum", "Políticas que firman los empleados."], ["tipos_ausencia", "Tipos de ausencia", "Clases de ausencia que se pueden registrar."], ["etapas_ausencia", "Etapas de ausencias", "Recorrido de cada ausencia, en orden; la última se considera cerrada."], ["categorias_adjunto", "Tipos de archivo", "Clasificación de los archivos de candidatos (CV, Excel…)."]];
   function editorLista(clave, titulo, ayuda) {
     const caja = h("div", { class: "lista-chips" }), nuevo = h("input", { placeholder: "Agregar…", style: { maxWidth: "240px" } });
@@ -192,6 +156,34 @@ async function paginaConfiguracion(ctx) {
     return tarjeta("Documentos y avisos", h("div", {}, campo("Nombre de la empresa (encabezado)", c.empresa), campo("Área o departamento (encabezado)", c.area), campo("Ciudad que aparece en la fecha de los documentos", c.ciudad), campo("Avisar cumpleaños con cuántos días de anticipación", c.dias), campo("Escala de calificación de la ficha (texto de ayuda)", c.escala),
       h("button", { class: "btn pri", onclick: async () => { const r = await intentar(() => llamar("config_guardar", { ...cfg, empresa: c.empresa.value, area: c.area.value, ciudad: c.ciudad.value, dias_cumpleanos: c.dias.value, escala: c.escala.value }, [])); if (r) { cfg = r; toast("Datos guardados."); } } }, "Guardar cambios")), { color: "c2", nota: "Aparecen en el encabezado de los documentos y en el Resumen." });
   }
+  function editorSeleccion() {
+    const num = (v, min, max, w) => h("input", { value: v, inputMode: "numeric", style: { width: w || "90px" }, "data-min": min, "data-max": max });
+    const c = {
+      rp: num(cfg.reagendas_pruebas, 0, 20), re: num(cfg.reagendas_entrevistas, 0, 20),
+      ph: num(cfg.pruebas_por_hora, 1, 100), ed: num(cfg.entrevistas_por_dia, 1, 100),
+      hp: h("input", { value: cfg.pruebas_horario }), he: h("input", { value: cfg.entrevistas_horario }),
+      ua: num(Math.round(cfg.umbral_a * 100), 1, 100), ub: num(Math.round(cfg.umbral_b * 100), 1, 100),
+      d: num(cfg.hora_desde, 0, 23), hh: num(cfg.hora_hasta, 1, 24),
+    };
+    const marcas = cfg.pruebas_ranking.map(([k, n]) => ({ k, n, on: cfg.comparables.includes(k), caja: h("input", { type: "checkbox", checked: cfg.comparables.includes(k) }), nombre: h("input", { value: n, style: { maxWidth: "260px" } }) }));
+    const campo = (t, x, ayuda) => h("label", { class: "campo" }, t, h("span", { class: "x" }, x), ayuda ? h("small", { class: "tenue" }, ayuda) : null);
+    const guardar = async () => {
+      const r = await intentar(() => llamar("config_guardar", { ...cfg, reagendas_pruebas: c.rp.value, reagendas_entrevistas: c.re.value, pruebas_por_hora: c.ph.value, entrevistas_por_dia: c.ed.value,
+        pruebas_horario: c.hp.value, entrevistas_horario: c.he.value, umbral_a: Number(c.ua.value) / 100, umbral_b: Number(c.ub.value) / 100, hora_desde: c.d.value, hora_hasta: c.hh.value,
+        comparables: marcas.filter((m) => m.caja.checked).map((m) => m.k), pruebas_ranking: marcas.map((m) => [m.k, m.nombre.value]) }, []));
+      if (r) { cfg = r; cfgSel = null; toast("Reclutamiento guardado."); }
+    };
+    return tarjeta("Reclutamiento: reagendas, capacidad y notas", h("div", {},
+      h("div", { class: "rejilla" },
+        campo("Máximo de reagendas de la prueba", c.rp, "Al pasar de este número se pide confirmar"), campo("Máximo de reagendas de la entrevista", c.re, "Al pasar de este número se pide confirmar"),
+        campo("Pruebas por hora", c.ph, "Capacidad de candidatos en la misma hora"), campo("Entrevistas por día", c.ed, "Capacidad de entrevistas en un día"),
+        campo("Horario de las pruebas (texto informativo)", c.hp), campo("Horario de las entrevistas (texto informativo)", c.he),
+        campo("Grupo A desde (%)", c.ua, "Promedio comparable mínimo para finalista"), campo("Grupo B desde (%)", c.ub, "Por debajo de esto es grupo C"),
+        campo("El día de pruebas empieza a las (hora 0–23)", c.d, "Para entender «3:00» como 15:00"), campo("y termina a las (hora 1–24)", c.hh)),
+      h("div", { style: { marginTop: "14px" } }, h("div", { class: "campo-t" }, "Pruebas y cuáles entran en el promedio comparable"), h("div", { class: "tenue", style: { fontSize: "12px", marginBottom: "6px" } }, "Marca las que se promedian; puedes renombrarlas."), marcas.map((m) => h("div", { style: { display: "flex", gap: "10px", alignItems: "center", marginBottom: "6px" } }, m.caja, m.nombre))),
+      h("div", { style: { marginTop: "12px" } }, h("button", { class: "btn pri", onclick: guardar }, "Guardar"))),
+      { color: "c2", nota: "Todo esto antes estaba fijo en el código. Los estados, asistencias y fases no se editan porque la lógica depende de ellos." });
+  }
   function editorFicha() {
     const secs = cfg.secciones.map((s) => ({ nombre: s.nombre, global: s.global || "", texto: s.criterios.map(([c, m]) => `${c} | ${m}`).join("\n") }));
     const caja = h("div"); const pinta = () => caja.replaceChildren(...secs.map((s, i) => h("div", { class: "ficha-sec", style: { padding: "10px 12px" } }, h("div", { style: { display: "flex", gap: "8px", marginBottom: "6px" } }, h("input", { value: s.nombre, oninput: (e) => { s.nombre = e.target.value; } }), h("button", { class: "btn peligro peq", onclick: () => { secs.splice(i, 1); pinta(); } }, "Quitar")), h("input", { value: s.global, placeholder: "Texto del puntaje global (opcional)", style: { marginBottom: "6px" }, oninput: (e) => { s.global = e.target.value; } }), h("textarea", { value: s.texto, placeholder: "Un criterio por línea: texto | máximo", style: { minHeight: "110px" }, oninput: (e) => { s.texto = e.target.value; } }))));
@@ -202,7 +194,7 @@ async function paginaConfiguracion(ctx) {
   }
   async function cargar() {
     cfg = await intentar(() => llamar("config_obtener")); if (!cfg) return;
-    cont.replaceChildren(...LISTAS.map(([k, t, a]) => editorLista(k, t, a)), editorGrupos(), editorDatos(), editorFicha());
+    cont.replaceChildren(editorSeleccion(), ...LISTAS.map(([k, t, a]) => editorLista(k, t, a)), editorGrupos(), editorDatos(), editorFicha());
   }
   const p = h("div", { class: "pagina" }, cabecera("Configuración", "Listas, datos de documentos y criterios que puedes editar sin tocar el código", h("button", { class: "btn peligro", onclick: async () => { if (!(await confirmar("¿Volver a los valores originales de todas las listas y datos?\nLos registros ya guardados no se modifican.", "Restablecer", true, "Restablecer"))) return; const r = await intentar(() => llamar("config_restablecer")); if (r) { toast("Valores originales restablecidos."); await cargar(); ctx.listas = await llamar("listas"); ctx.refrescarListas(); } } }, "Restablecer valores originales")),
     h("div", { class: "scroll", style: { flex: 1, paddingRight: "6px" } }, cont));

@@ -1,6 +1,6 @@
 "use strict";
 const ctx = { listas: null, modulos: [], paginas: {}, actual: null, ir: null, insignias: null, refrescarListas: null };
-const ICONOS = { resumen: "▦", candidatos: "☺", matriz: "▥", proceso: "◔", programacion: "🗓", embudo: "⏷", pruebas: "✎", entrevistas: "☏", ranking: "★", no_aprobados: "⊘", empleados: "☺", amonestaciones: "⚠", vacaciones: "☀", memos: "✉", ausencias: "◔", documentos: "▤", pendientes: "◷", respaldos: "⛁", configuracion: "⚙" };
+const ICONOS = { resumen: "▦", candidatos: "☺", matriz: "▥", reagendas: "↻", programacion: "🗓", embudo: "⏷", pruebas: "✎", entrevistas: "☏", ranking: "★", no_aprobados: "⊘", empleados: "☺", amonestaciones: "⚠", vacaciones: "☀", memos: "✉", ausencias: "◔", documentos: "▤", pendientes: "◷", respaldos: "⛁", configuracion: "⚙" };
 
 async function arrancar() {
   await esperarPuente();
@@ -58,11 +58,11 @@ function construirNav(ini) {
 
 async function crearPagina(m) {
   switch (m.tipo) {
-    case "resumen": return paginaResumen(ctx);
+    case "resumen": return paginaProceso(m, ctx, true);
     case "ranking": return paginaRanking(ctx);
     case "candidatos": return paginaCandidatos(m, ctx);
     case "matriz": return paginaMatriz(m, ctx);
-    case "proceso": return paginaProceso(m, ctx);
+    case "reagendas": return paginaReagendas(m, ctx);
     case "programacion": return paginaProgramacion(m, ctx);
     case "documentos": return paginaDocumentos(ctx);
     case "pendientes": return paginaPendientes(ctx);

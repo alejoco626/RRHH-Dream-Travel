@@ -7,6 +7,7 @@ import ausencias
 import evaluacion
 import logica
 import ranking
+import seleccion as sel
 
 DEPARTAMENTOS = ["Ventas", "Reservas", "Visas", "Asistencia", "Procesos y control de calidad",
                  "Control de Calidad", "Administración", "Recursos humanos", "IT"]
@@ -31,6 +32,19 @@ def _estado():
         "area": documentos.AREA,
         "ciudad": documentos.CIUDAD,
         "dias_cumpleanos": PARAMETROS["dias_cumpleanos"],
+        "sel_fuentes": list(sel.FUENTES),
+        "sel_puestos": list(sel.PUESTOS),
+        "sel_responsables": list(sel.RESPONSABLES),
+        "umbral_a": sel.UMBRALES["a"], "umbral_b": sel.UMBRALES["b"],
+        "reagendas_pruebas": sel.REAGENDAS["pruebas"],
+        "reagendas_entrevistas": sel.REAGENDAS["entrevistas"],
+        "pruebas_por_hora": sel.CAPACIDAD["pruebas_por_hora"],
+        "entrevistas_por_dia": sel.CAPACIDAD["entrevistas_por_dia"],
+        "pruebas_horario": sel.CAPACIDAD["pruebas_horario"],
+        "entrevistas_horario": sel.CAPACIDAD["entrevistas_horario"],
+        "hora_desde": sel.VENTANA_HORAS[0], "hora_hasta": sel.VENTANA_HORAS[1],
+        "comparables": list(sel.COMPARABLES),
+        "pruebas_ranking": [[k, n] for k, n in sel.PRUEBAS],
         "escala": evaluacion.ESCALA,
         "secciones": [{"nombre": s["nombre"], "global": s["global"],
                        "criterios": [[c, m] for c, m in s["criterios"]]}
@@ -65,7 +79,56 @@ def _secciones(valor):
     return resultado
 
 
+def _entero(valor, minimo, maximo):
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return n if minimo <= n <= maximo and not isinstance(valor, bool) else None
+
+
+def _aplicar_seleccion(datos):
+    for clave, destino in (("sel_fuentes", sel.FUENTES), ("sel_puestos", sel.PUESTOS),
+                           ("sel_responsables", sel.RESPONSABLES)):
+        lista = _lista(datos.get(clave))
+        if lista:
+            destino[:] = lista
+    try:
+        a, b = float(datos["umbral_a"]), float(datos["umbral_b"])
+        if 0 < b < a <= 1:
+            sel.UMBRALES["a"], sel.UMBRALES["b"] = a, b
+    except (KeyError, TypeError, ValueError):
+        pass
+    for clave, destino in (("reagendas_pruebas", "pruebas"), ("reagendas_entrevistas", "entrevistas")):
+        n = _entero(datos.get(clave), 0, 20)
+        if n is not None:
+            sel.REAGENDAS[destino] = n
+    for clave, tope in (("pruebas_por_hora", 100), ("entrevistas_por_dia", 100)):
+        n = _entero(datos.get(clave), 1, tope)
+        if n is not None:
+            sel.CAPACIDAD[clave] = n
+    sel.CAPACIDAD["pruebas_por_dia"] = sel.CAPACIDAD["pruebas_por_hora"] * 7
+    for clave in ("pruebas_horario", "entrevistas_horario"):
+        if isinstance(datos.get(clave), str) and datos[clave].strip():
+            sel.CAPACIDAD[clave] = datos[clave].strip()
+    desde, hasta = _entero(datos.get("hora_desde"), 0, 23), _entero(datos.get("hora_hasta"), 1, 24)
+    if desde is not None and hasta is not None and desde < hasta:
+        sel.VENTANA_HORAS[:] = [desde, hasta]
+    claves = [k for k, _ in sel.PRUEBAS]
+    comp = datos.get("comparables")
+    if isinstance(comp, list) and comp and all(c in claves for c in comp):
+        sel.COMPARABLES[:] = [k for k in claves if k in comp]
+    nombres = datos.get("pruebas_ranking")
+    if isinstance(nombres, list) and len(nombres) == len(sel.PRUEBAS):
+        try:
+            nuevas = [(k, str(n).strip() or viejo) for (k, viejo), (_, n) in zip(sel.PRUEBAS, nombres)]
+            sel.PRUEBAS[:] = nuevas
+        except (TypeError, ValueError):
+            pass
+
+
 def aplicar(datos):
+    _aplicar_seleccion(datos)
     for clave, destino in (("plazas", ranking.PLAZAS), ("puestos", ranking.PUESTOS), ("tipos_ausencia", ausencias.TIPOS),
                            ("etapas_ausencia", ausencias.ETAPAS),
                            ("departamentos", DEPARTAMENTOS),
@@ -99,8 +162,22 @@ def cargar():
         datos = json.loads(bd.leer_config(CLAVE) or "{}")
     except ValueError:
         datos = {}
-    if isinstance(datos, dict):
+    if isinstance(datos, dict) and datos:
         aplicar(datos)
+    else:  # aún no se guarda la configuración: partir de los parámetros del JSON cargado
+        try:
+            p = json.loads(bd.leer_config("parametros_seleccion") or "{}")
+        except ValueError:
+            p = {}
+        if isinstance(p, dict) and p:
+            cap, rea = p.get("capacidad") or {}, p.get("reagendas") or {}
+            aplicar({"umbral_a": p.get("umbral_a"), "umbral_b": p.get("umbral_b"),
+                     "reagendas_pruebas": rea.get("pruebas"),
+                     "reagendas_entrevistas": rea.get("entrevistas"),
+                     "pruebas_por_hora": cap.get("pruebas_por_hora"),
+                     "entrevistas_por_dia": cap.get("entrevistas_por_dia"),
+                     "pruebas_horario": cap.get("pruebas_horario"),
+                     "entrevistas_horario": cap.get("entrevistas_horario")})
 
 
 def guardar():
