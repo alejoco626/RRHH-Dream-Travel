@@ -44,9 +44,15 @@ COLUMNAS = {
                   "fecha_cierre", "archivo"],
     "embudo": ["nombre_completo", "telefono", "plaza", "etapa", "fecha", "hora", "estado",
                "motivo", "fecha_descarte", "notas", "asistencia"],
+    "candidatos": ["nombre", "puesto", "fecha_aplicacion", "telefono", "asistencia", "correo",
+                   "fuente", "ronda", "estado", "fecha_prueba", "horario_prueba",
+                   "fecha_entrevista", "hora_entrevista", "observaciones", "pendientes",
+                   "evaluacion", "recomendacion", "lectura", "motivo", "convocatoria"],
+    "programacion": ["fecha_inicio", "fecha_fin", "actividad", "fase", "responsable", "estado",
+                     "reporte", "notas", "convocatoria"],
 }
 CON_EMPLEADO = ("amonestaciones", "vacaciones", "memos", "ausencias")
-VERSION_ESQUEMA = 9
+VERSION_ESQUEMA = 10
 CATEGORIAS_ADJUNTO = ["CV", "Prueba de Excel", "Otro"]
 EXT_ADJUNTOS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".xlsm")
 
@@ -83,6 +89,43 @@ CREATE TABLE {nombre} (
 ESQUEMA = (
     TPL_EMPLEADOS.format(nombre="IF NOT EXISTS empleados") + TPL_VACACIONES.format(
         nombre="IF NOT EXISTS vacaciones") + """
+CREATE TABLE IF NOT EXISTS candidatos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    puesto TEXT,
+    fecha_aplicacion TEXT,
+    telefono TEXT,
+    asistencia TEXT NOT NULL DEFAULT 'Sin contactar',
+    correo TEXT,
+    fuente TEXT,
+    ronda TEXT DEFAULT 'Primera',
+    estado TEXT NOT NULL DEFAULT 'Nuevo',
+    fecha_prueba TEXT,
+    horario_prueba TEXT,
+    fecha_entrevista TEXT,
+    hora_entrevista TEXT,
+    observaciones TEXT,
+    pendientes TEXT,
+    evaluacion TEXT,
+    recomendacion TEXT,
+    lectura TEXT,
+    motivo TEXT,
+    convocatoria TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_candidatos_estado ON candidatos(estado);
+CREATE TABLE IF NOT EXISTS programacion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_inicio TEXT NOT NULL,
+    fecha_fin TEXT,
+    actividad TEXT NOT NULL,
+    fase TEXT,
+    responsable TEXT,
+    estado TEXT NOT NULL DEFAULT 'Sin reporte',
+    reporte TEXT,
+    notas TEXT,
+    convocatoria TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_programacion_fecha ON programacion(fecha_inicio);
 CREATE TABLE IF NOT EXISTS pruebas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     candidato TEXT NOT NULL,

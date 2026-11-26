@@ -1016,5 +1016,157 @@ class PruebasApi(unittest.TestCase):
             self.assertTrue(a.resumen()["ok"] and a.pendientes()["ok"] and a.insignias()["ok"])
 
 
+class PruebasSeleccion(PruebasBase):
+    """Lógica del libro de candidatos: normalización, grupos, clasificación y carga de JSON."""
+
+    def _detalle(self, cv=None, ventas=None, sim=None):
+        d = ev.vacio()
+        for i, v in ((0, cv), (1, ventas), (3, sim)):
+            for c in d["secciones"][i]["criterios"]:
+                c["calificacion"] = v
+        return d
+
+    def test_normalizacion(self):
+        import seleccion as sel
+        self.assertEqual(sel.nombre_normal("Luisa NataliaFflores  Estrada"), "Luisa Natalia Flores Estrada")
+        self.assertEqual(sel.nombre_normal("Gladys Fernanda Jiguan DE león"), "Gladys Fernanda Jiguan de León")
+        self.assertEqual(sel.telefono_normal("50255551234"), "+502 5555 1234")
+        self.assertEqual(sel.fecha_normal("19/11/82026"), "2026-11-19")
+        self.assertEqual(sel.fecha_normal("2026-11-05 00:00:00"), "2026-11-05")
+        self.assertIsNone(sel.fecha_normal("no es fecha"))
+        self.assertEqual(sel.hora_normal("3:00 p. m."), "15:00")
+        self.assertEqual(sel.hora_normal("11.00 am"), "11:00")
+        self.assertEqual(sel.hora_normal("14:00 PM"), "14:00")
+        self.assertEqual(sel.hora_normal("3:00"), "15:00")
+        self.assertEqual(sel.asistencia_normal("CONFIRMADA"), "Confirmada")
+        self.assertEqual(sel.asistencia_normal("DE BAJA"), "De baja")
+        self.assertEqual(sel.asistencia_normal(""), "Sin contactar")
+
+    def test_grupos_y_ranking_con_empates(self):
+        import seleccion as sel
+        cands = [
+            {"id": 1, "nombre": "Ana", "estado": "Entrevista", "evaluacion": ev.a_texto(self._detalle(5, 5, 5))},
+            {"id": 2, "nombre": "Beto", "estado": "En evaluación", "evaluacion": ev.a_texto(self._detalle(4, 4, 4))},
+            {"id": 3, "nombre": "Cris", "estado": "En evaluación", "evaluacion": ev.a_texto(self._detalle(5, 5, 5))},
+            {"id": 4, "nombre": "Dani", "estado": "En evaluación", "evaluacion": ev.a_texto(self._detalle(2, 2, 2))},
+            {"id": 5, "nombre": "Eva", "estado": "Nuevo", "evaluacion": ev.a_texto(self._detalle(5, None, None))},
+        ]
+        m = {f["nombre"]: f for f in sel.matriz(cands)}
+        self.assertEqual(m["Ana"]["grupo"], sel.GRUPOS[0])
+        self.assertEqual(m["Beto"]["grupo"], sel.GRUPOS[1])  # 80 %
+        self.assertEqual(m["Dani"]["grupo"], sel.GRUPOS[2])  # 40 %
+        self.assertEqual(m["Eva"]["grupo"], sel.GRUPOS[3])   # sin las tres pruebas
+        self.assertEqual((m["Ana"]["ranking"], m["Cris"]["ranking"]), (1, 1))  # empate
+        self.assertEqual(m["Beto"]["ranking"], 3)
+        self.assertIsNone(m["Eva"]["ranking"])
+        self.assertIn("Evaluación de ventas", m["Eva"]["falta"])
+        self.assertEqual(m["Ana"]["sugerencia"], None)  # ya está en entrevista
+        self.assertEqual(m["Cris"]["sugerencia"], "Entrevista")
+        self.assertEqual(m["Dani"]["sugerencia"], "Descartado")
+
+    def test_clasificar_estado(self):
+        import seleccion as sel
+        f = sel.clasificar_estado
+        self.assertEqual(f({"estado": "Entrevista", "observaciones": "YA REALIZÓ LA ENTREVISTA Y ESTÁ EN CAPACITACIÓN"})[0], "Contratado")
+        self.assertEqual(f({"estado": "Declinó", "fecha_entrevista_texto": "NO PROSIGUE"})[0], "Descartado")
+        self.assertEqual(f({"estado": "En evaluación", "observaciones": "no se presentó a la prueba", "asistencia": "De baja"})[0], "Declinó")
+        # quien pidió reagendar sigue en proceso aunque faltó
+        self.assertEqual(f({"estado": "En evaluación", "observaciones": "NO SE PRESENTÓ", "asistencia": "Reagendar"})[0], "En evaluación")
+        self.assertEqual(f({"estado": "", "observaciones": ""})[0], "Nuevo")
+        self.assertEqual(f({"estado": "", "fecha_entrevista": "2026-12-01"})[0], "Entrevista")
+
+    def test_fases_y_situacion(self):
+        import seleccion as sel
+        self.assertEqual(sel.fase_de("Publicidad y gestión de agenda en Calendy"), "Publicidad")
+        self.assertEqual(sel.fase_de("Pruebas de habilidades e inicio de entrevistas"), "Pruebas de habilidades")
+        self.assertEqual(sel.fase_de("Entrevistas"), "Entrevistas")
+        self.assertEqual(sel.fase_de("Seguimiento de documentación · jornada de medio día"), "Seguimiento de documentación")
+        self.assertEqual(sel.fase_de("Firma de documentos"), "Firma de documentos")
+        self.assertEqual(sel.fase_de("Inicio de capacitación"), "Capacitación")
+        hoy = date(2026, 11, 26)
+        self.assertEqual(sel.situacion_actividad({"fecha_inicio": "2026-11-10", "estado": "Sin reporte"}, hoy), "Atrasada")
+        self.assertEqual(sel.situacion_actividad({"fecha_inicio": "2026-11-23", "fecha_fin": "2026-11-27", "estado": "Sin reporte"}, hoy), "Hoy")
+        self.assertEqual(sel.situacion_actividad({"fecha_inicio": "2026-12-01", "estado": "Sin reporte"}, hoy), "Próxima")
+        self.assertEqual(sel.situacion_actividad({"fecha_inicio": "2026-11-10", "estado": "Completada"}, hoy), "Cerrada")
+
+    def test_json_se_carga_una_vez_y_sin_duplicar(self):
+        import json
+        import datos_json as dj
+        datos = {"formato": dj.FORMATO, "candidatos": [
+            {"nombre": "ana lópez", "telefono": "5555 1234", "estado": "Nuevo", "puesto": "Otro"},
+            {"nombre": "Ana López", "telefono": "+502 5555 1234", "estado": "Nuevo"}],
+            "programacion": [{"fecha_inicio": "2026-12-01", "actividad": "Firma de documentos", "responsable": "adriana"}],
+            "parametros": {"umbral_a": 0.9, "umbral_b": 0.6}}
+        with tempfile.TemporaryDirectory() as t:
+            ruta = os.path.join(t, "datos_iniciales.json")
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump(datos, f)
+            r1 = dj.importar(ruta, respaldar=False)
+            self.assertEqual((r1["candidatos"], r1["programacion"]), (1, 1))  # la 2.ª fila es la misma persona
+            r2 = dj.importar(ruta, respaldar=False)
+            self.assertEqual((r2["candidatos"], r2["programacion"]), (0, 0))
+            c = bd.listar("candidatos")[0]
+            self.assertEqual((c["nombre"], c["telefono"]), ("Ana López", "+502 5555 1234"))
+            self.assertEqual(bd.listar("programacion")[0]["responsable"], "ADRIANA")
+            self.assertEqual(json.loads(bd.leer_config("parametros_seleccion"))["umbral_a"], 0.9)
+            # lo editado en la app no se pisa al volver a cargar
+            bd.guardar("candidatos", {"estado": "Contratado"}, c["id"])
+            dj.importar(ruta, respaldar=False)
+            self.assertEqual(bd.listar("candidatos")[0]["estado"], "Contratado")
+            # exportar y volver a leer
+            salida = os.path.join(t, "salida.json")
+            self.assertEqual(dj.exportar(salida)["candidatos"], 1)
+            self.assertEqual(dj.leer(salida)["candidatos"][0]["nombre"], "Ana López")
+            with open(ruta, "w", encoding="utf-8") as f:
+                f.write("{no es json")
+            with self.assertRaises(ValueError):
+                dj.leer(ruta)
+
+    def test_api_candidatos_evaluacion_y_programacion(self):
+        import api
+        a = api.Api()
+        v = a.candidato_obtener(None)["datos"]["valores"]
+        self.assertIn("nombre", a.candidato_guardar(None, v)["error"].lower())
+        v.update(nombre="rocío paz", telefono="5555 0000", correo="mal correo")
+        self.assertIn("correo", a.candidato_guardar(None, v)["error"])
+        v["correo"] = "rocio@x.com"
+        i = a.candidato_guardar(None, v)["datos"]["id"]
+        self.assertEqual(bd.obtener("candidatos", i)["nombre"], "Rocío Paz")
+        dup = a.candidato_guardar(None, dict(v, correo=""))["datos"]
+        self.assertIn("Ya existe", dup["confirmar"])  # pide confirmación, no guarda
+        self.assertEqual(len(bd.listar("candidatos")), 1)
+        e = a.evaluacion_obtener(i)["datos"]
+        for sec in e["detalle"]["secciones"][:4]:
+            for c in sec["criterios"]:
+                c["calificacion"] = 5
+        r = a.evaluacion_guardar(i, e["detalle"], "buena", "", "")["datos"]
+        self.assertEqual(r["sugerencia"], "Entrevista")
+        self.assertEqual(bd.obtener("candidatos", i)["estado"], "En evaluación")  # pasó solo
+        e["detalle"]["secciones"][0]["criterios"][0]["calificacion"] = 9
+        self.assertIn("entre 0 y 5", a.evaluacion_guardar(i, e["detalle"])["error"])
+        a.candidato_estado(i, "Entrevista")
+        self.assertEqual(bd.obtener("candidatos", i)["ronda"], "Segunda")
+        a.candidato_estado(i, "Descartado", "no encaja")
+        self.assertEqual(bd.obtener("candidatos", i)["motivo"], "no encaja")
+        self.assertEqual(a.candidatos(estado="__activos")["datos"]["total"], 0)
+        self.assertEqual(a.matriz()["datos"]["filas"][0]["ranking"], 1)
+        self.assertEqual(a.proceso()["datos"]["total"], 1)
+        # programación
+        self.assertIn("fecha", a.prog_guardar(None, {"actividad": "x"})["error"].lower())
+        self.assertIn("anterior", a.prog_guardar(None, {"fecha_inicio": "05/12/2026", "fecha_fin": "01/12/2026", "actividad": "x"})["error"])
+        p = a.prog_guardar(None, {"fecha_inicio": "01/12/2026", "actividad": "Entrevistas", "responsable": "jacky"})["datos"]["id"]
+        self.assertEqual(bd.obtener("programacion", p)["fase"], "Entrevistas")
+        self.assertTrue(a.prog_estado(p, "Completada", "ok")["ok"])
+        self.assertFalse(a.prog_estado(p, "Inventado")["ok"])
+        self.assertEqual(a.prog_listar(solo_pendientes=True)["datos"]["filas"], [])
+        self.assertIn("2026-12-01", a.calendario("2026-12")["datos"]["dias"])
+        self.assertFalse(a.guardar_umbrales("0.5", "0.9")["ok"])
+        self.assertTrue(a.guardar_umbrales("0.9", "0.6")["ok"])
+        # los módulos viejos se ocultan si no tienen datos
+        claves = [m["clave"] for m in a.inicio()["datos"]["modulos"]]
+        self.assertIn("candidatos", claves)
+        self.assertNotIn("embudo", claves)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,28 @@ INSTALAR Y ABRIR
 Los datos quedan en la carpeta "datos" (base rrhh.db, archivos subidos y documentos
 Word creados). Para respaldar todo, copia esa carpeta.
 
+RECLUTAMIENTO  (reemplaza al embudo, pruebas y entrevistas anteriores; esos se ocultan si no tienen datos)
+  Candidatos       Un candidato por fila, con las mismas columnas del libro: puesto, fecha de
+                   aplicación, teléfono, asistencia, correo, fuente, ronda, estado, horario de
+                   prueba, entrevista y observaciones. Arriba, el embudo por estado; a la
+                   derecha, la ficha con resultado, grupo y siguiente paso sugerido.
+  Evaluar          Botón de la ficha: 6 pruebas por criterios (0 a 5; Excel sobre 10). El
+                   porcentaje, el grupo y la posición se calculan solos. Al calificar, el
+                   candidato pasa de "Nuevo" a "En evaluación" y la app sugiere el siguiente paso.
+  Matriz y ranking Resultados por prueba (colores), promedio comparable (CV, ventas y simulación),
+                   posición, grupo A (85 % o más), B (70 % o más) o C, y lo que falta registrar.
+  Resumen del proceso  Totales y gráficas: embudo, grupos, promedio por prueba, puestos, fuentes.
+  Programacion     Embudo aparte (publicidad, pruebas, entrevistas, documentos, firma y
+                   capacitación) con lista, calendario mensual, atrasadas y capacidad
+                   (3 candidatos por hora en pruebas, 3 entrevistas por día).
+
+DATOS EN JSON (para llevar la información a otra computadora)
+  Coloca "datos_iniciales.json" en la carpeta Descargas, junto a RRHH.exe, o en la carpeta
+  "importar" dentro de los datos. Al abrir la app se carga sola, una vez, y sin repetir
+  personas ni pisar lo que ya editaste. También: Candidatos > "Cargar datos (JSON)" y
+  "Exportar datos". El archivo tiene datos personales: no lo subas a GitHub.
+  Para volver a convertir el libro Excel:  python convertir_libro.py libro.xlsx
+
 SECCIONES  (cada una tiene el botón "+ Nuevo" arriba a la derecha)
   Resumen          Pruebas y entrevistas de HOY y de MAÑANA, total de confirmados por
                    venir, ATRASADOS sin confirmar (con su teléfono, y botones "Asistió"

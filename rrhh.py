@@ -7,8 +7,12 @@ import api
 import config_app
 import base_datos as bd
 import configuracion
+import datos_json
 import respaldos
 import version
+
+
+CARGA_INICIAL = []
 
 
 def carpeta_web():
@@ -68,6 +72,7 @@ def preparar():
                                       for r in respaldos.listar_respaldos())}
     bd.crear_tablas()
     configuracion.cargar()
+    CARGA_INICIAL[:] = datos_json.cargar_automaticamente()
     try:
         respaldos.respaldo_automatico()
     except Exception as e:
@@ -79,6 +84,7 @@ def main():
     import webview
     _nitidez_en_windows()
     puente = api.Api()
+    puente.carga_inicial = CARGA_INICIAL
     puente.alerta_base = preparar()
     ventana = webview.create_window(
         "RRHH – Dream & Travel", url=os.path.join(carpeta_web(), "index.html"), js_api=puente,

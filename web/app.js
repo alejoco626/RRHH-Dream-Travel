@@ -1,6 +1,6 @@
 "use strict";
 const ctx = { listas: null, modulos: [], paginas: {}, actual: null, ir: null, insignias: null, refrescarListas: null };
-const ICONOS = { resumen: "▦", embudo: "⏷", pruebas: "✎", entrevistas: "☏", ranking: "★", no_aprobados: "⊘", empleados: "☺", amonestaciones: "⚠", vacaciones: "☀", memos: "✉", ausencias: "◔", documentos: "▤", pendientes: "◷", respaldos: "⛁", configuracion: "⚙" };
+const ICONOS = { resumen: "▦", candidatos: "☺", matriz: "▥", proceso: "◔", programacion: "🗓", embudo: "⏷", pruebas: "✎", entrevistas: "☏", ranking: "★", no_aprobados: "⊘", empleados: "☺", amonestaciones: "⚠", vacaciones: "☀", memos: "✉", ausencias: "◔", documentos: "▤", pendientes: "◷", respaldos: "⛁", configuracion: "⚙" };
 
 async function arrancar() {
   await esperarPuente();
@@ -21,6 +21,7 @@ async function arrancar() {
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); const p = ctx.paginas[ctx.actual]; if (p && p.guardar) p.guardar(); } });
   await ir("resumen");
   insignias();
+  avisarCargaAutomatica();
   intentar(() => llamar("listo"), true);
   if (ini.novedades) setTimeout(() => mostrarNovedades(ini.novedades), 500);
   if (ini.puede_actualizar) setTimeout(() => buscarActualizacion(ini, true), 2500);
@@ -59,6 +60,10 @@ async function crearPagina(m) {
   switch (m.tipo) {
     case "resumen": return paginaResumen(ctx);
     case "ranking": return paginaRanking(ctx);
+    case "candidatos": return paginaCandidatos(m, ctx);
+    case "matriz": return paginaMatriz(m, ctx);
+    case "proceso": return paginaProceso(m, ctx);
+    case "programacion": return paginaProgramacion(m, ctx);
     case "documentos": return paginaDocumentos(ctx);
     case "pendientes": return paginaPendientes(ctx);
     case "respaldos": return paginaRespaldos(ctx);
@@ -86,6 +91,15 @@ async function ir(clave, opciones = {}) {
     if (opciones.id && pagina.abrirRegistro) await pagina.abrirRegistro(opciones.id);
     if (opciones.valores && pagina.nuevoCon) await pagina.nuevoCon(opciones.valores, opciones.heredar);
   } finally { navegando = false; }
+}
+
+async function avisarCargaAutomatica() {
+  const r = await intentar(() => llamar("datos_automaticos"), true); if (!r || !r.length) return;
+  r.forEach((x) => {
+    if (x.error) toast(`No se pudo cargar ${x.archivo}: ${x.error}`, "error");
+    else if (x.candidatos || x.programacion) toast(`Datos cargados: ${x.candidatos} candidatos y ${x.programacion} actividades nuevas.`);
+  });
+  if (r.some((x) => x.candidatos || x.programacion)) { ctx.paginas = {}; }
 }
 
 async function insignias() {

@@ -4,3 +4,6 @@ datos/
 build/
 dist/
 *.spec
+datos_iniciales*.json
+rrhh_datos*.json
+informe_clasificacion*.md

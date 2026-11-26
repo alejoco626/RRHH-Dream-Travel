@@ -5,7 +5,9 @@ Cada método público lo llama JavaScript y devuelve {"ok": True, "datos": ...} 
 aaaa-mm-dd en la base de datos.
 """
 import functools
+import json
 import os
+import re
 import sqlite3
 import queue
 import subprocess
@@ -19,12 +21,14 @@ import agenda
 import ausencias
 import base_datos as bd
 import configuracion
+import datos_json
 import documentos
 import evaluacion as ev
 import importador
 import informes
 import logica
 import ranking
+import seleccion as sel
 import respaldos
 import novedades
 import version
@@ -166,6 +170,10 @@ COLUMNAS = {
 # clave: (tabla, estado, grupo, título, subtítulo, formulario, botón nuevo, acciones, cabecera)
 MODULOS = {
     "resumen": dict(titulo="Resumen", grupo="", tipo="resumen"),
+    "candidatos": dict(grupo="Reclutamiento", titulo="Candidatos", tipo="candidatos"),
+    "matriz": dict(grupo="Reclutamiento", titulo="Matriz y ranking", tipo="matriz"),
+    "proceso": dict(grupo="Reclutamiento", titulo="Resumen del proceso", tipo="proceso"),
+    "programacion": dict(grupo="Reclutamiento", titulo="Programación", tipo="programacion"),
     "embudo": dict(tabla="embudo", estado="Activo", grupo="Selección", titulo="Embudo de confirmados",
                    sub="Personas que confirmaron su asistencia a las pruebas o a la entrevista",
                    acciones=[("mover_etapa", "Mover de etapa", "sec"),
@@ -211,6 +219,8 @@ MODULOS = {
     "respaldos": dict(grupo="Sistema", titulo="Respaldos", tipo="respaldos"),
     "configuracion": dict(grupo="Sistema", titulo="Configuración", tipo="configuracion"),
 }
+
+MODULOS_VIEJOS = ("embudo", "pruebas", "entrevistas", "ranking", "no_aprobados")
 
 RENOMBRES = {
     "plazas": lambda v, n: bd.renombrar_plaza(v, n),
@@ -318,6 +328,7 @@ class Api:
         self._listo = threading.Event()
         self._descarga = None
         self._candado = threading.Lock()
+        self.carga_inicial = []
 
     # ------------------------------------------------------------------ utilidades
     def _dialogo(self, tipo, **kw):
@@ -383,7 +394,10 @@ class Api:
 
     def _modulos(self):
         salida = []
+        viejo_vacio = not any(bd.listar(t) for t in ("embudo", "pruebas", "entrevistas"))
         for clave, m in MODULOS.items():
+            if viejo_vacio and clave in MODULOS_VIEJOS:
+                continue  # el flujo anterior queda oculto mientras no tenga datos
             item = {"clave": clave, "titulo": m["titulo"], "grupo": m["grupo"],
                     "tipo": m.get("tipo", "crud"), "sub": m.get("sub", "")}
             if "tabla" in m:
@@ -1305,6 +1319,368 @@ class Api:
         if nuevo in ("claro", "oscuro"):
             bd.guardar_config("modo", nuevo)
         return bd.leer_config("modo", "claro")
+
+    # ------------------------------------------------------------------ reclutamiento
+    @staticmethod
+    def _umbrales():
+        try:
+            p = json.loads(bd.leer_config("parametros_seleccion", "{}") or "{}")
+        except ValueError:
+            p = {}
+        return p.get("umbral_a", sel.UMBRALES["a"]), p.get("umbral_b", sel.UMBRALES["b"])
+
+    def _matriz_filas(self):
+        ua, ub = self._umbrales()
+        cands = bd.listar("candidatos")
+        return cands, sel.matriz(cands, ua, ub)
+
+    @seguro
+    def sel_config(self):
+        ua, ub = self._umbrales()
+        return {"estados": sel.ESTADOS, "activos": sel.ACTIVOS, "cerrados": sel.CERRADOS,
+                "asistencias": sel.ASISTENCIAS, "rondas": sel.RONDAS, "fuentes": sel.FUENTES,
+                "puestos": sel.PUESTOS, "pruebas": [[k, n] for k, n in sel.PRUEBAS],
+                "grupos": sel.GRUPOS, "fases": sel.FASES, "estados_act": sel.ESTADOS_ACT,
+                "responsables": sel.RESPONSABLES, "umbral_a": ua, "umbral_b": ub,
+                "capacidad": sel.CAPACIDAD, "escala": ev.ESCALA,
+                "secciones": [{"nombre": s["nombre"], "global": s["global"],
+                               "criterios": [[c, m] for c, m in s["criterios"]]}
+                              for s in ev.SECCIONES]}
+
+    @seguro
+    def candidatos(self, buscar="", estado="", grupo=""):
+        cands, filas = self._matriz_filas()
+        por_id = {c["id"]: c for c in cands}
+        buscar = (buscar or "").strip().lower()
+        hoy = date.today().isoformat()
+        salida = []
+        for f in filas:
+            c = por_id[f["id"]]
+            if estado == "__activos" and c["estado"] not in sel.ACTIVOS:
+                continue
+            if estado and estado != "__activos" and c["estado"] != estado:
+                continue
+            if grupo and f["grupo"] != grupo:
+                continue
+            if buscar and buscar not in " ".join(str(c.get(k) or "") for k in (
+                    "nombre", "telefono", "correo", "puesto", "observaciones", "fuente")).lower():
+                continue
+            salida.append({
+                "id": c["id"], "nombre": c["nombre"], "puesto": c.get("puesto") or "",
+                "telefono": c.get("telefono") or "", "correo": c.get("correo") or "",
+                "fuente": c.get("fuente") or "", "ronda": c.get("ronda") or "",
+                "estado": c["estado"], "asistencia": c.get("asistencia") or "",
+                "fecha_aplicacion": c.get("fecha_aplicacion") or "",
+                "fecha_prueba": c.get("fecha_prueba") or "",
+                "horario_prueba": c.get("horario_prueba") or "",
+                "fecha_entrevista": c.get("fecha_entrevista") or "",
+                "hora_entrevista": c.get("hora_entrevista") or "",
+                "observaciones": c.get("observaciones") or "",
+                "pendientes": c.get("pendientes") or "", "motivo": c.get("motivo") or "",
+                "grupo": f["grupo"], "comparable": f["comparable"], "ranking": f["ranking"],
+                "hechas": f["hechas"], "resultados": f["resultados"], "falta": f["falta"],
+                "sugerencia": f["sugerencia"], "recomendacion": f["recomendacion"],
+                "entrevista_hoy": c.get("fecha_entrevista") == hoy})
+        cuenta = {e: sum(1 for c in cands if c["estado"] == e) for e in sel.ESTADOS}
+        return {"filas": salida, "total": len(salida), "por_estado": cuenta,
+                "todos": len(cands)}
+
+    @seguro
+    def candidato_obtener(self, id_registro=None):
+        if id_registro is None:
+            return {"id": None, "valores": {
+                "nombre": "", "puesto": sel.PUESTOS[0], "fecha_aplicacion": date.today().isoformat(),
+                "telefono": "", "asistencia": sel.ASISTENCIAS[0], "correo": "", "fuente": sel.FUENTES[0],
+                "ronda": sel.RONDAS[0], "estado": "Nuevo", "fecha_prueba": "", "horario_prueba": "",
+                "fecha_entrevista": "", "hora_entrevista": "", "observaciones": "", "pendientes": "",
+                "motivo": ""}}
+        c = bd.obtener("candidatos", id_registro)
+        if c is None:
+            raise ValueError("El candidato ya no existe.")
+        return {"id": id_registro,
+                "valores": {k: ("" if c.get(k) is None else c[k]) for k in bd.COLUMNAS["candidatos"]
+                            if k not in ("evaluacion", "recomendacion", "lectura")}}
+
+    def _avisos_candidato(self, d, id_actual):
+        avisos = []
+        otros = [c for c in bd.listar("candidatos") if c["id"] != id_actual]
+        k = sel.clave_candidato(d["nombre"], d.get("telefono"), d.get("correo"))
+        for c in otros:
+            if sel.clave_candidato(c["nombre"], c["telefono"], c["correo"]) == k:
+                avisos.append(f"Ya existe «{c['nombre']}» con el mismo teléfono, correo o nombre.")
+                break
+        if d.get("fecha_entrevista"):
+            n, cap = sel.cupo_entrevistas(otros, d["fecha_entrevista"])
+            if d["estado"] in sel.ACTIVOS and n >= cap:
+                avisos.append(f"Ese día ya hay {n} entrevistas (capacidad {cap}).")
+        if d.get("fecha_prueba") and d.get("horario_prueba"):
+            n, cap = sel.cupo_pruebas(otros, d["fecha_prueba"], d["horario_prueba"])
+            if d["estado"] in sel.ACTIVOS and n >= cap:
+                avisos.append(f"A esa hora ya hay {n} pruebas (capacidad {cap}).")
+        return avisos
+
+    @seguro
+    def candidato_guardar(self, id_actual, valores, confirmar_duplicado=False):
+        d = {}
+        d["nombre"] = sel.nombre_normal(valores.get("nombre"))
+        if not d["nombre"]:
+            raise ValueError("Escribe el nombre del candidato.")
+        d["puesto"] = sel.limpiar(valores.get("puesto")) or "Otro"
+        d["fuente"] = sel.limpiar(valores.get("fuente")) or "Otro"
+        d["telefono"] = sel.telefono_normal(valores.get("telefono"))
+        d["correo"] = sel.correo_normal(valores.get("correo"))
+        if d["correo"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", d["correo"]):
+            raise ValueError("El correo no parece válido.")
+        d["asistencia"] = sel.asistencia_normal(valores.get("asistencia"))
+        d["ronda"] = valores.get("ronda") if valores.get("ronda") in sel.RONDAS else sel.RONDAS[0]
+        d["estado"] = sel.estado_normal(valores.get("estado")) or "Nuevo"
+        for k in ("fecha_aplicacion", "fecha_prueba", "fecha_entrevista"):
+            crudo = valores.get(k)
+            d[k] = sel.fecha_normal(crudo) if crudo else None
+            if crudo and not d[k]:
+                raise ValueError("Revisa la fecha: usa día/mes/año.")
+        for k in ("horario_prueba", "hora_entrevista"):
+            crudo = valores.get(k)
+            d[k] = sel.hora_normal(crudo) if crudo else ""
+            if crudo and not d[k]:
+                raise ValueError("Revisa la hora (por ejemplo 15:00).")
+        d["observaciones"] = (valores.get("observaciones") or "").strip()
+        d["pendientes"] = (valores.get("pendientes") or "").strip()
+        d["motivo"] = (valores.get("motivo") or "").strip() if d["estado"] in sel.CERRADOS else ""
+        avisos = self._avisos_candidato(d, id_actual)
+        duplicado = [a for a in avisos if a.startswith("Ya existe")]
+        if duplicado and not confirmar_duplicado:
+            return {"confirmar": duplicado[0], "avisos": avisos}
+        nuevo = bd.guardar("candidatos", d, id_actual)
+        return {"id": nuevo, "avisos": [a for a in avisos if a not in duplicado]}
+
+    @seguro
+    def candidato_eliminar(self, id_registro):
+        bd.eliminar("candidatos", id_registro)
+        return True
+
+    @seguro
+    def candidato_estado(self, id_registro, estado, motivo=""):
+        c = bd.obtener("candidatos", id_registro)
+        if c is None:
+            raise ValueError("El candidato ya no existe.")
+        estado = sel.estado_normal(estado)
+        if not estado:
+            raise ValueError("Estado no válido.")
+        datos = {"estado": estado, "motivo": (motivo or "").strip() if estado in sel.CERRADOS else ""}
+        if estado in ("Entrevista", "Finalista", "Contratado"):
+            datos["ronda"] = "Segunda"
+        bd.guardar("candidatos", datos, id_registro)
+        return True
+
+    @seguro
+    def evaluacion_obtener(self, id_registro):
+        c = bd.obtener("candidatos", id_registro)
+        if c is None:
+            raise ValueError("El candidato ya no existe.")
+        return {"id": id_registro, "nombre": c["nombre"], "puesto": c.get("puesto") or "",
+                "detalle": ev.desde_texto(c.get("evaluacion")),
+                "observaciones": c.get("observaciones") or "",
+                "recomendacion": c.get("recomendacion") or "", "lectura": c.get("lectura") or ""}
+
+    @seguro
+    def evaluacion_calcular(self, detalle):
+        d = self._detalle_leido(detalle, estricto=False)
+        r = sel.resumen_evaluacion(d)
+        ua, ub = self._umbrales()
+        return {"resultados": {k: r[k] for k, _ in sel.PRUEBAS}, "comparable": r["comparable"],
+                "disponible": r["disponible"], "grupo": sel.grupo_de(r["comparable"], ua, ub),
+                "falta": sel.falta_registrar(r)}
+
+    @seguro
+    def evaluacion_guardar(self, id_registro, detalle, observaciones="", recomendacion="",
+                           lectura="", pasar_estado=False):
+        c = bd.obtener("candidatos", id_registro)
+        if c is None:
+            raise ValueError("El candidato ya no existe.")
+        d = self._detalle_leido(detalle, estricto=True)
+        datos = {"evaluacion": json.dumps(d, ensure_ascii=False), "pendientes": d["pendientes"],
+                 "observaciones": (observaciones or "").strip(),
+                 "recomendacion": (recomendacion or "").strip(), "lectura": (lectura or "").strip()}
+        r = sel.resumen_evaluacion(d)
+        ua, ub = self._umbrales()
+        grupo = sel.grupo_de(r["comparable"], ua, ub)
+        sugerido = sel.sugerencia_estado(c["estado"], grupo, c.get("asistencia"))
+        if c["estado"] == "Nuevo" and r["hechas"]:
+            datos["estado"] = "En evaluación"  # automatiza: al calificar pasa a evaluación
+        bd.guardar("candidatos", datos, id_registro)
+        return {"grupo": grupo, "comparable": r["comparable"], "sugerencia": sugerido
+                if sugerido != "En evaluación" else None}
+
+    @seguro
+    def matriz(self):
+        cands, filas = self._matriz_filas()
+        ua, ub = self._umbrales()
+        activos = [f for f in filas if f["estado"] in sel.ACTIVOS or f["estado"] == "Contratado"]
+        return {"filas": filas, "umbral_a": ua, "umbral_b": ub,
+                "pruebas": [[k, n] for k, n in sel.PRUEBAS],
+                "faltan": [f for f in filas if f["estado"] in sel.ACTIVOS and f["falta"]
+                           and f["hechas"] > 0],
+                "activos": len(activos)}
+
+    @seguro
+    def proceso(self):
+        cands, filas = self._matriz_filas()
+        r = sel.resumen_proceso(cands, filas)
+        hoy = date.today().isoformat()
+        r["entrevistas_proximas"] = sorted(
+            [{"nombre": c["nombre"], "fecha": c["fecha_entrevista"], "hora": c.get("hora_entrevista") or ""}
+             for c in cands if c.get("fecha_entrevista") and c["fecha_entrevista"] >= hoy
+             and c["estado"] in sel.ACTIVOS], key=lambda x: (x["fecha"], x["hora"]))[:8]
+        r["por_confirmar"] = sum(1 for c in cands if c["estado"] in sel.ACTIVOS
+                                 and c.get("asistencia") in ("Sin contactar", "Enviar link",
+                                                              "Pendiente de confirmar", "Reagendar"))
+        r["por_convocatoria"] = [{"etiqueta": k, "valor": v} for k, v in sorted(
+            {c.get("convocatoria") or "Sin convocatoria": 0 for c in cands}.items())]
+        for it in r["por_convocatoria"]:
+            it["valor"] = sum(1 for c in cands if (c.get("convocatoria") or "Sin convocatoria") == it["etiqueta"])
+        return r
+
+    # --- programación (embudo aparte)
+    @seguro
+    def prog_listar(self, fase="", buscar="", solo_pendientes=False):
+        hoy = date.today()
+        filas = bd.listar("programacion")
+        salida = []
+        for a in sorted(filas, key=lambda x: (x["fecha_inicio"], x["actividad"])):
+            a = dict(a)
+            a["situacion"] = sel.situacion_actividad(a, hoy)
+            if fase and a["fase"] != fase:
+                continue
+            if solo_pendientes and a["situacion"] == "Cerrada":
+                continue
+            if buscar and buscar.lower() not in " ".join(str(a.get(k) or "") for k in (
+                    "actividad", "responsable", "reporte", "notas")).lower():
+                continue
+            salida.append(a)
+        por_fase = []
+        for f in sel.FASES:
+            de = [a for a in filas if a["fase"] == f]
+            sit = [sel.situacion_actividad(a, hoy) for a in de]
+            por_fase.append({"fase": f, "total": len(de), "atrasadas": sit.count("Atrasada"),
+                             "hoy": sit.count("Hoy"), "proximas": sit.count("Próxima"),
+                             "cerradas": sit.count("Cerrada")})
+        return {"filas": salida, "por_fase": por_fase,
+                "proximas": [a for a in salida if a["situacion"] in ("Hoy", "Próxima")][:6],
+                "atrasadas": [a for a in salida if a["situacion"] == "Atrasada"],
+                "hoy": hoy.isoformat()}
+
+    @seguro
+    def prog_obtener(self, id_registro=None):
+        if id_registro is None:
+            return {"id": None, "valores": {"fecha_inicio": date.today().isoformat(), "fecha_fin": "",
+                                            "actividad": "", "fase": sel.FASES[1], "responsable": "",
+                                            "estado": "Sin reporte", "reporte": "", "notas": ""}}
+        a = bd.obtener("programacion", id_registro)
+        if a is None:
+            raise ValueError("La actividad ya no existe.")
+        return {"id": id_registro, "valores": {k: ("" if a.get(k) is None else a[k])
+                                               for k in bd.COLUMNAS["programacion"]}}
+
+    @seguro
+    def prog_guardar(self, id_actual, valores):
+        ini = sel.fecha_normal(valores.get("fecha_inicio"))
+        if not ini:
+            raise ValueError("Escribe la fecha de inicio (día/mes/año).")
+        fin = sel.fecha_normal(valores.get("fecha_fin")) if valores.get("fecha_fin") else ini
+        if not fin:
+            raise ValueError("Revisa la fecha final.")
+        if fin < ini:
+            raise ValueError("La fecha final no puede ser anterior a la de inicio.")
+        act = sel.limpiar(valores.get("actividad"))
+        if not act:
+            raise ValueError("Escribe la actividad.")
+        estado = valores.get("estado") if valores.get("estado") in sel.ESTADOS_ACT else "Sin reporte"
+        d = {"fecha_inicio": ini, "fecha_fin": fin, "actividad": act,
+             "fase": valores.get("fase") if valores.get("fase") in sel.FASES else sel.fase_de(act),
+             "responsable": sel.limpiar(valores.get("responsable")).upper(), "estado": estado,
+             "reporte": (valores.get("reporte") or "").strip(),
+             "notas": (valores.get("notas") or "").strip()}
+        return {"id": bd.guardar("programacion", d, id_actual)}
+
+    @seguro
+    def prog_estado(self, id_registro, estado, reporte=""):
+        if estado not in sel.ESTADOS_ACT:
+            raise ValueError("Estado no válido.")
+        d = {"estado": estado}
+        if reporte:
+            d["reporte"] = reporte.strip()
+        bd.guardar("programacion", d, id_registro)
+        return True
+
+    @seguro
+    def prog_eliminar(self, id_registro):
+        bd.eliminar("programacion", id_registro)
+        return True
+
+    @seguro
+    def calendario(self, mes=""):
+        """Días del mes con actividades y entrevistas, más las notas del libro (encargada, feriados)."""
+        hoy = date.today()
+        if not re.fullmatch(r"\d{4}-\d{2}", mes or ""):
+            mes = f"{hoy.year}-{hoy.month:02d}"
+        a, m = int(mes[:4]), int(mes[5:])
+        dias = {}
+        for p in bd.listar("programacion"):
+            ini, fin = p["fecha_inicio"], p.get("fecha_fin") or p["fecha_inicio"]
+            d0, d1 = date.fromisoformat(ini), date.fromisoformat(fin)
+            d = d0
+            while d <= d1:
+                if d.year == a and d.month == m:
+                    dias.setdefault(d.isoformat(), {"actividades": [], "entrevistas": []})[
+                        "actividades"].append({"id": p["id"], "texto": p["actividad"], "fase": p["fase"],
+                                               "responsable": p.get("responsable") or "",
+                                               "estado": p["estado"]})
+                d += timedelta(days=1)
+        for c in bd.listar("candidatos"):
+            f = c.get("fecha_entrevista")
+            if f and f.startswith(mes) and c["estado"] in sel.ACTIVOS + ["Contratado"]:
+                dias.setdefault(f, {"actividades": [], "entrevistas": []})["entrevistas"].append(
+                    {"id": c["id"], "nombre": c["nombre"], "hora": c.get("hora_entrevista") or ""})
+        try:
+            notas = json.loads(bd.leer_config("calendario_notas", "{}") or "{}").get(mes, {})
+        except ValueError:
+            notas = {}
+        return {"mes": mes, "dias": dias, "notas": notas.get("notas", []),
+                "capacidad": sel.CAPACIDAD, "hoy": hoy.isoformat()}
+
+    # --- datos (JSON)
+    @seguro
+    def datos_cargar(self):
+        ruta = self._dialogo("abrir", tipos=("Datos (*.json)",))
+        if not ruta:
+            return None
+        r = datos_json.importar(ruta)
+        return {"mensaje": f"Se cargaron {r['candidatos']} candidatos y {r['programacion']} "
+                           f"actividades nuevas; {r['omitidos']} ya estaban.", **r}
+
+    @seguro
+    def datos_exportar(self):
+        ruta = self._dialogo("guardar", nombre=f"rrhh_datos_{date.today():%Y-%m-%d}.json",
+                             tipos=("Datos (*.json)",))
+        if not ruta:
+            return None
+        r = datos_json.exportar(ruta)
+        return {"mensaje": f"Se guardaron {r['candidatos']} candidatos y {r['programacion']} "
+                           "actividades.", **r}
+
+    @seguro
+    def datos_automaticos(self):
+        """Resultado de la carga automática hecha al abrir (para avisar en pantalla)."""
+        return self.carga_inicial or []
+
+    @seguro
+    def guardar_umbrales(self, umbral_a, umbral_b):
+        a, b = float(umbral_a), float(umbral_b)
+        if not (0 < b < a <= 1):
+            raise ValueError("Los umbrales deben cumplir: 0 < B < A ≤ 100 %.")
+        bd.guardar_config("parametros_seleccion", json.dumps({"umbral_a": a, "umbral_b": b}))
+        return True
 
     @seguro
     def cerrar(self):

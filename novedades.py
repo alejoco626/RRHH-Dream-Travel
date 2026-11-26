@@ -16,6 +16,15 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.3.0": {
+        "nuevo": [
+            "Reclutamiento: registro de candidatos igual que en el libro, con embudo por estado",
+            "Evaluación por criterios (6 pruebas), promedio comparable, ranking y grupos A, B y C",
+            "Programación como embudo aparte: lista, calendario y capacidad de pruebas y entrevistas",
+            "Resumen del proceso con gráficas, y carga automática de los datos desde un archivo JSON",
+        ],
+        "cambios": ["El embudo, las pruebas y las entrevistas anteriores se ocultan mientras no tengan datos"],
+    },
     "1.2.2": {
         "nuevo": ["La actualización automática ahora descarga el instalador, lo verifica y reabre la app sola"],
         "correcciones": ["Se corrigió la actualización que no terminaba de instalarse"],
