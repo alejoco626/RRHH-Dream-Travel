@@ -1378,6 +1378,21 @@ class Api:
                                "criterios": [[c, m] for c, m in s["criterios"]]}
                               for s in ev.SECCIONES]}
 
+    @staticmethod
+    def _avisos_duplicado(cands):
+        """{id: [textos]}: «Posible duplicado» guardado al cargar el libro y el que se detecta
+        ahora entre dos candidatos que comparten teléfono, correo o nombre."""
+        res = {}
+        for h in bd._consultar("SELECT candidato_id, detalle FROM historial WHERE tipo = 'duplicado'"):
+            res.setdefault(h["candidato_id"], []).append(h["detalle"])
+        for i, a in enumerate(cands):
+            for b in cands[i + 1:]:
+                m = sel.motivos_coincidencia(a, b)
+                if m:
+                    res.setdefault(a["id"], []).append(sel.texto_duplicado(b["nombre"], m))
+                    res.setdefault(b["id"], []).append(sel.texto_duplicado(a["nombre"], m))
+        return res
+
     @seguro
     def candidatos(self, buscar="", estado="", grupo=""):
         cands, filas = self._matriz_filas()
@@ -1385,6 +1400,7 @@ class Api:
         buscar = (buscar or "").strip().lower()
         hoy = date.today().isoformat()
         cuentas = bd.contar_reagendas()
+        avisos_dup = self._avisos_duplicado(cands)
         salida = []
         for f in filas:
             c = por_id[f["id"]]
@@ -1413,7 +1429,8 @@ class Api:
                 "hechas": f["hechas"], "resultados": f["resultados"], "falta": f["falta"],
                 "sugerencia": f["sugerencia"], "recomendacion": f["recomendacion"],
                 "entrevista_hoy": c.get("fecha_entrevista") == hoy,
-                "reagendas": sel.resumen_reagendas(*cuentas.get(c["id"], (0, 0)))})
+                "reagendas": sel.resumen_reagendas(*cuentas.get(c["id"], (0, 0))),
+                "duplicado": avisos_dup.get(c["id"], [])})
         cuenta = {e: sum(1 for c in cands if c["estado"] == e) for e in sel.ESTADOS}
         return {"filas": salida, "total": len(salida), "por_estado": cuenta,
                 "todos": len(cands)}
@@ -1445,7 +1462,8 @@ class Api:
         k = sel.clave_candidato(d["nombre"], d.get("telefono"), d.get("correo"))
         for c in otros:
             if sel.clave_candidato(c["nombre"], c["telefono"], c["correo"]) == k:
-                avisos.append(f"Ya existe «{c['nombre']}» con el mismo teléfono, correo o nombre.")
+                m = sel.motivos_coincidencia(d, c) or ["sus datos"]
+                avisos.append(sel.texto_duplicado(c["nombre"], m).replace("Posible duplicado de", "Posible duplicado: ya existe"))
                 break
         if d.get("fecha_entrevista"):
             n, cap = sel.cupo_entrevistas(otros, d["fecha_entrevista"])
@@ -1486,7 +1504,7 @@ class Api:
         d["pendientes"] = (valores.get("pendientes") or "").strip()
         d["motivo"] = (valores.get("motivo") or "").strip() if d["estado"] in sel.CERRADOS else ""
         avisos = self._avisos_candidato(d, id_actual)
-        duplicado = [a for a in avisos if a.startswith("Ya existe")]
+        duplicado = [a for a in avisos if a.startswith("Posible duplicado")]
         if duplicado and not confirmar_duplicado:
             return {"confirmar": duplicado[0], "avisos": avisos}
         antes = bd.obtener("candidatos", id_actual) if id_actual else None

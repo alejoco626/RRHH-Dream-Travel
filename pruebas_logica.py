@@ -1287,7 +1287,7 @@ class PruebasSeleccion(PruebasBase):
         i = a.candidato_guardar(None, v)["datos"]["id"]
         self.assertEqual(bd.obtener("candidatos", i)["nombre"], "Rocío Paz")
         dup = a.candidato_guardar(None, dict(v, correo=""))["datos"]
-        self.assertIn("Ya existe", dup["confirmar"])  # pide confirmación, no guarda
+        self.assertIn("Posible duplicado", dup["confirmar"])  # pide confirmación, no guarda
         self.assertEqual(len(bd.listar("candidatos")), 1)
         e = a.evaluacion_obtener(i)["datos"]
         for sec in e["detalle"]["secciones"][:4]:

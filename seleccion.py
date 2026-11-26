@@ -185,6 +185,26 @@ def clave_candidato(nombre, telefono="", correo=""):
     return "nom:" + clave_nombre(nombre)
 
 
+def motivos_coincidencia(a, b):
+    """En qué coinciden dos candidatos: teléfono, correo y/o nombre (vacío = no coinciden)."""
+    m = []
+    ta, tb = digitos_telefono(a.get("telefono")), digitos_telefono(b.get("telefono"))
+    if ta and ta == tb:
+        m.append("teléfono")
+    ca, cb = correo_normal(a.get("correo")), correo_normal(b.get("correo"))
+    if ca and ca == cb:
+        m.append("correo")
+    na, nb = clave_nombre(a.get("nombre")), clave_nombre(b.get("nombre"))
+    if na and na == nb:
+        m.append("nombre")
+    return m
+
+
+def texto_duplicado(nombre_otro, motivos):
+    return (f"Posible duplicado de «{nombre_otro}»: pueden ser la misma persona porque coinciden en "
+            f"{', '.join(motivos)}. Revisa si es una sola.")
+
+
 # ---------------------------------------------------------------- evaluación
 def resumen_evaluacion(texto_o_detalle):
     """{'cv': 0..1|None, ..., 'hechas': n, 'disponible': prom, 'comparable': prom|None}."""

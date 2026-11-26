@@ -32,7 +32,7 @@ function avisoReag(r) {
 }
 function lineaHistorial(lista) {
   if (!lista.length) return h("div", { class: "tenue" }, "Sin historial: es su primera y única postulación.");
-  const ic = { prueba: "↻ Prueba", entrevista: "↻ Entrevista", postulacion: "📋 Postulación" };
+  const ic = { prueba: "↻ Prueba", entrevista: "↻ Entrevista", postulacion: "📋 Postulación", duplicado: "⚠ Posible duplicado" };
   return h("ol", { class: "linea" }, lista.map((x) => h("li", { class: x.tipo }, h("b", {}, ic[x.tipo]), " ", h("span", { class: "tenue" }, [fmtF(x.fecha), fmtH(x.hora)].filter(Boolean).join(" · ")), h("div", {}, x.detalle))));
 }
 function chip(t, c) { return h("span", { class: "chip " + (c || "") }, t); }
@@ -88,7 +88,7 @@ async function paginaCandidatos(m, ctx) {
     if (!r.filas.length) { tabla.replaceChildren(sinFilas(r.todos ? "Ningún candidato coincide con el filtro." : "Aún no hay candidatos. Agrega uno o carga el archivo de datos.")); total.textContent = "0"; return; }
     const cab = ["Candidato", "Asistencia", "Estado", "Prueba", "Entrevista", "Resultado", "Grupo"];
     const cuerpo = r.filas.map((f) => h("tr", { class: "fila-nueva" + (f.id === est.id ? " sel" : ""), onclick: () => abrir(f.id) },
-      h("td", { title: f.nombre }, h("b", {}, f.nombre), f.entrevista_hoy ? chip("Hoy", "av") : null, h("small", { class: "sub-nombre" }, f.puesto)),
+      h("td", { title: f.nombre }, h("b", {}, f.nombre), f.entrevista_hoy ? chip("Hoy", "av") : null, f.duplicado.length ? h("span", { class: "chip na", title: f.duplicado.join("\n") }, "Posible duplicado") : null, h("small", { class: "sub-nombre" }, f.puesto)),
       h("td", {}, chip(f.asistencia, claseAsist(f.asistencia))), h("td", {}, chip(f.estado, claseEstado(f.estado))),
       h("td", {}, fmtH(f.horario_prueba), " ", chipReag(f.reagendas.pruebas, "prueba")),
       h("td", {}, [fmtF(f.fecha_entrevista).slice(0, 5), fmtH(f.hora_entrevista)].filter(Boolean).join(" · "), " ", chipReag(f.reagendas.entrevistas, "entrevista")),
@@ -113,6 +113,7 @@ async function paginaCandidatos(m, ctx) {
       h("div", { class: "det-cuerpo scroll" },
         h("div", { class: "resultado-grande" }, h("div", {}, h("small", {}, "Promedio comparable"), h("b", {}, pct(f.comparable))), h("div", {}, h("small", {}, "Posición"), h("b", {}, f.ranking ? "#" + f.ranking : "—")), h("div", {}, h("small", {}, "Grupo"), chip(f.grupo.split(":")[0] === "Pendiente de evaluar" ? "Sin grupo" : f.grupo, claseGrupo(f.grupo)))),
         barrasP,
+        f.duplicado.length ? h("div", { class: "aviso-reag limite" }, h("b", {}, "⚠ Posible duplicado"), f.duplicado.map((t) => h("div", {}, t.replace(/^Posible duplicado:? ?/, "")))) : null,
         h("div", { class: "reag-ficha" }, h("small", {}, "Reagendas"), medidorReag(f.reagendas.pruebas, "prueba"), medidorReag(f.reagendas.entrevistas, "entrevista"), avisoReag(f.reagendas), histBox),
         f.falta.length && f.hechas ? h("div", { class: "aviso-falta" }, "Falta registrar: " + f.falta.join(", ").toLowerCase()) : null,
         f.sugerencia ? h("div", { class: "sugerencia" }, h("span", {}, `Siguiente paso sugerido: ${f.sugerencia}`), h("button", { class: "btn pri peq", onclick: () => cambiarEstado(f, f.sugerencia) }, "Aplicar")) : null,

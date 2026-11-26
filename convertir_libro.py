@@ -213,9 +213,12 @@ def _historial(c):
                        ("Obs.", x["observaciones"])):
             if v:
                 partes.append(f"{rot}: {v}")
+        crudos = [("Nombre", x["nombre_original"]), ("Teléfono", x["telefono_original"]),
+                  ("Correo", x["correo_original"]), ("Puesto", x["puesto"]), ("Fuente", x["fuente"])]
+        partes += [f"{k}: {v}" for k, v in crudos if v]
         res.append({"tipo": "postulacion", "fecha": sel.fecha_normal(x["fecha_aplicacion_crudo"]) or "",
                     "hora": prueba[1] if prueba else "",
-                    "detalle": f"Postulación previa (fila {x['fila']}). " + " · ".join(partes)})
+                    "detalle": f"Postulación previa tal como está en el libro (fila {x['fila']}). " + " · ".join(partes)})
     for clave, tipo in ((0, "prueba"), (1, "entrevista")):
         agendas = []
         for x in todas:  # las agendas distintas, en orden; la última es la vigente
@@ -226,7 +229,31 @@ def _historial(c):
             res.append({"tipo": tipo, "fecha": a[0], "hora": a[1],
                         "detalle": f"{'Prueba' if tipo == 'prueba' else 'Entrevista'} agendada "
                                    f"para {_fmt(*a)}; se reagendó"})
+    res.append(_aviso_duplicado(todas))
     return res
+
+
+def _aviso_duplicado(todas):
+    """Texto de «Posible duplicado»: en qué coinciden las filas y qué datos cambian entre ellas."""
+    def repetido(clave):
+        vistos = [clave(x) for x in todas if clave(x)]
+        return len(vistos) != len(set(vistos))
+    coinciden = [n for n, c in (("teléfono", lambda x: sel.digitos_telefono(x["telefono"])),
+                                ("correo", lambda x: x["correo"]),
+                                ("nombre", lambda x: sel.clave_nombre(x["nombre"]))) if repetido(c)]
+    cambian = []
+    for n, k in (("teléfono", "telefono_original"), ("correo", "correo_original"),
+                 ("nombre", "nombre_original")):
+        vals = list(dict.fromkeys(x[k] for x in todas if x[k]))
+        if len(vals) > 1:
+            cambian.append(f"{n}: " + " / ".join(vals))
+    filas = ", ".join(str(x["fila"]) for x in todas)
+    texto = (f"Posible duplicado: las {len(todas)} filas {filas} del libro pueden ser la misma persona "
+             f"porque coinciden en {', '.join(coinciden) or 'sus datos'}. ")
+    if cambian:
+        texto += "Datos distintos entre ellas: " + "; ".join(cambian) + ". "
+    return {"tipo": "duplicado", "fecha": "", "hora": "",
+            "detalle": texto + "Se unieron en un solo candidato; revisa si es correcto."}
 
 
 def convertir(ruta_xlsx, ruta_json, ruta_informe):
@@ -239,6 +266,7 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
     # --- unir duplicados (mismo teléfono o correo o nombre)
     grupos = {}
     for c in crudos:
+        c["telefono_original"], c["correo_original"] = c["telefono"], c["correo"]
         c["nombre"] = sel.nombre_normal(c["nombre_original"])
         if c["nombre"] != c["nombre_original"]:
             informe["cambios"].append(f"Nombre fila {c['fila']}: «{c['nombre_original']}» → "

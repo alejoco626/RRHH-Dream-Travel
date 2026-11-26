@@ -16,6 +16,10 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.1": {
+        "nuevo": ["Aviso «Posible duplicado» en la tabla y en la ficha cuando dos candidatos comparten teléfono, correo o nombre, con el motivo"],
+        "cambios": ["Las filas repetidas se guardan tal como están en el libro (nombre, teléfono, correo, puesto y fuente) dentro del historial"],
+    },
     "1.4.0": {
         "nuevo": ["Nueva sección «Reagendas»: cuántas veces cada persona cambió su prueba o entrevista, con colores y su historial",
                   "Si cambias la fecha u hora de una cita ya agendada, la app pregunta si es una reagenda y avisa al pasar el máximo",

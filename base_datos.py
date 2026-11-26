@@ -382,7 +382,7 @@ def eliminar(tabla, id_registro):
     _ejecutar("DELETE FROM adjuntos WHERE tabla = ? AND registro_id = ?", (tabla, id_registro))
 
 
-TIPOS_HISTORIAL = ("prueba", "entrevista", "postulacion")
+TIPOS_HISTORIAL = ("prueba", "entrevista", "postulacion", "duplicado")
 
 
 def historial_de(candidato_id):
