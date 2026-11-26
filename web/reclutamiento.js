@@ -66,9 +66,9 @@ async function paginaCandidatos(m, ctx) {
     const cuerpo = r.filas.map((f) => h("tr", { class: "fila-nueva" + (f.id === est.id ? " sel" : ""), onclick: () => abrir(f.id) },
       h("td", { title: f.nombre }, h("b", {}, f.nombre), f.entrevista_hoy ? chip("Hoy", "av") : null, h("small", { class: "sub-nombre" }, f.puesto)),
       h("td", {}, chip(f.asistencia, claseAsist(f.asistencia))), h("td", {}, chip(f.estado, claseEstado(f.estado))),
-      h("td", {}, fmtH(f.horario_prueba)), h("td", {}, [fmtF(f.fecha_entrevista), fmtH(f.hora_entrevista)].filter(Boolean).join(" · ")),
-      h("td", {}, chipPct(f.comparable, cfg)), h("td", {}, f.grupo === "Pendiente de evaluar" ? h("span", { class: "tenue" }, f.hechas ? `Faltan ${f.falta.length} pruebas` : "Sin evaluar") : chip(f.grupo.split(":")[0], claseGrupo(f.grupo)))));
-    tabla.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, cab.map((c) => h("th", {}, c)))), h("tbody", {}, cuerpo)));
+      h("td", {}, fmtH(f.horario_prueba)), h("td", {}, [fmtF(f.fecha_entrevista).slice(0, 5), fmtH(f.hora_entrevista)].filter(Boolean).join(" · ")),
+      h("td", {}, chipPct(f.comparable, cfg)), h("td", {}, f.grupo === "Pendiente de evaluar" ? h("span", { class: "tenue" }, f.hechas ? `Faltan ${f.falta.length}` : "Sin evaluar") : chip(f.grupo.split(":")[0], claseGrupo(f.grupo)))));
+    tabla.replaceChildren(h("table", { class: "compacta" }, h("thead", {}, h("tr", {}, cab.map((c) => h("th", {}, c)))), h("tbody", {}, cuerpo)));
     total.textContent = `${r.total} de ${r.todos}`;
   }
 
@@ -233,7 +233,7 @@ async function paginaMatriz(m, ctx) {
         datos.pruebas.map(([k]) => celda(f.resultados[k])), h("td", {}, chipPct(f.comparable, cfg)),
         h("td", {}, f.grupo === "Pendiente de evaluar" ? h("span", { class: "tenue" }, "Pendiente") : chip(f.grupo.split(":")[0], claseGrupo(f.grupo))), h("td", { title: f.recomendacion }, f.recomendacion)))));
     cuerpo.replaceChildren(filas.length ? tabla : sinFilas("Sin candidatos para mostrar."),
-      falta.length ? h("div", { class: "falta" }, h("h3", {}, `Falta registrar (${falta.length})`), h("p", { class: "tenue" }, "Candidatos en proceso con evaluación incompleta."), falta.map((f) => h("div", { class: "item click", onclick: () => ctx.ir("candidatos", { id: f.id }) }, h("span", { class: "n" }, f.nombre), h("span", { class: "s" }, f.falta.join(", ").toLowerCase())))) : null);
+      ...(falta.length ? [h("div", { class: "falta" }, h("h3", {}, `Falta registrar (${falta.length})`), h("p", { class: "tenue" }, "Candidatos en proceso con evaluación incompleta."), falta.map((f) => h("div", { class: "item click", onclick: () => ctx.ir("candidatos", { id: f.id }) }, h("span", { class: "n" }, f.nombre), h("span", { class: "s" }, f.falta.join(", ").toLowerCase()))))] : []));
     $("#mt-total").textContent = `${filas.length} candidatos`;
   }
   pagina.refrescar = async () => {

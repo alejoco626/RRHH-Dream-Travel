@@ -16,6 +16,10 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.3.2": {
+        "cambios": ["La tabla de Candidatos es más compacta y se ve completa junto al panel lateral"],
+        "correcciones": ["Ya no aparece la palabra «null» al final de Matriz y ranking ni en el Resumen"],
+    },
     "1.3.1": {
         "nuevo": ["Al cargar un JSON puedes actualizar también a los candidatos que ya estaban, viendo antes cuántos cambian"],
         "correcciones": ["Se unen como una sola persona los candidatos con el mismo correo aunque el teléfono tenga un error",

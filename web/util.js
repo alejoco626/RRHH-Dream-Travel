@@ -182,3 +182,12 @@ function dona(datos, { centro } = {}) {
   return h("div", { style: { display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap" } }, svg,
     h("div", { class: "leyenda", style: { flexDirection: "column", gap: "7px" } }, datos.map((d, i) => h("span", {}, h("i", { style: { background: PALETA[i % PALETA.length] } }), `${d.etiqueta} · `, h("b", {}, d.valor)))));
 }
+
+/* Evita que un null/undefined/false (o una lista) se pinte como texto: «null» */
+(() => {
+  const limpiar = (k) => k.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false);
+  for (const nombre of ["replaceChildren", "append"]) {
+    const original = Element.prototype[nombre];
+    Element.prototype[nombre] = function (...k) { return original.apply(this, limpiar(k)); };
+  }
+})();

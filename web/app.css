@@ -242,3 +242,7 @@ table.matriz td:last-child{max-width:240px}
 .barra select{max-width:200px}
 .sub-nombre{display:block;color:var(--sec);font-size:11.5px}
 td:first-child{max-width:230px}
+
+/* tabla de candidatos: que quepa junto al panel lateral */
+table.compacta th,table.compacta td{padding-left:7px;padding-right:7px}
+table.compacta td:first-child{max-width:190px}
