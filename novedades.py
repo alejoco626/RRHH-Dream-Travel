@@ -16,6 +16,11 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.3.1": {
+        "nuevo": ["Al cargar un JSON puedes actualizar también a los candidatos que ya estaban, viendo antes cuántos cambian"],
+        "correcciones": ["Se unen como una sola persona los candidatos con el mismo correo aunque el teléfono tenga un error",
+                         "Las evaluaciones en 0 del libro ya no se pierden al convertirlo"],
+    },
     "1.3.0": {
         "nuevo": [
             "Reclutamiento: registro de candidatos igual que en el libro, con embudo por estado",

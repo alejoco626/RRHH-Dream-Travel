@@ -1651,13 +1651,20 @@ class Api:
 
     # --- datos (JSON)
     @seguro
-    def datos_cargar(self):
+    def datos_elegir(self):
+        """Elige el archivo y cuenta qué traería (sin cambiar nada)."""
         ruta = self._dialogo("abrir", tipos=("Datos (*.json)",))
         if not ruta:
             return None
-        r = datos_json.importar(ruta)
-        return {"mensaje": f"Se cargaron {r['candidatos']} candidatos y {r['programacion']} "
-                           f"actividades nuevas; {r['omitidos']} ya estaban.", **r}
+        return {"ruta": ruta, **datos_json.importar(ruta, actualizar=True, simular=True)}
+
+    @seguro
+    def datos_aplicar(self, ruta, actualizar=False):
+        r = datos_json.importar(ruta, actualizar=bool(actualizar))
+        txt = f"Se agregaron {r['candidatos']} candidatos y {r['programacion']} actividades"
+        if actualizar:
+            txt += f"; se actualizaron {r['actualizados']} que ya estaban"
+        return {"mensaje": txt + ".", **r}
 
     @seguro
     def datos_exportar(self):

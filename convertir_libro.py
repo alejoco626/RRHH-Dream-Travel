@@ -202,10 +202,21 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
                                       f"«{c['nombre']}»")
         c["telefono"] = sel.telefono_normal(c["telefono"])
         c["correo"] = sel.correo_normal(c["correo"])
-        k = sel.clave_candidato(c["nombre"], c["telefono"], c["correo"])
-        grupos.setdefault(k, []).append(c)
-    unidos = []
-    for k, lst in grupos.items():
+        # misma persona si coincide el teléfono, el correo o el nombre (une las claves)
+        claves = [x for x in ("tel:" + sel.digitos_telefono(c["telefono"]) if sel.digitos_telefono(c["telefono"]) else "",
+                              "mail:" + c["correo"] if c["correo"] else "",
+                              "nom:" + sel.clave_nombre(c["nombre"])) if x]
+        destino = next((grupos[x] for x in claves if x in grupos), None)
+        if destino is None:
+            destino = []
+        destino.append(c)
+        for x in claves:
+            grupos[x] = destino
+    unidos, vistos = [], set()
+    for lst in grupos.values():
+        if id(lst) in vistos:
+            continue
+        vistos.add(id(lst))
         base = lst[-1]  # la fila más reciente manda
         if len(lst) > 1:
             informe["cambios"].append(
@@ -244,8 +255,7 @@ def convertir(ruta_xlsx, ruta_json, ruta_informe):
             det, obs_eval, origen = hoja["detalle"], hoja["observaciones"], "hoja Evaluaciones"
         if det is not None and _todo_cero(det):
             informe["cambios"].append(f"{c['nombre']}: evaluación toda en 0 (no se presentó); "
-                                      "queda sin evaluar.")
-            det = None
+                                      "se conserva tal como está en el libro.")
         c["_det"], c["_origen"] = det, origen
         if obs_eval and obs_eval != c["observaciones"]:
             c["observaciones"] = (c["observaciones"] + " | " if c["observaciones"] else "") + obs_eval

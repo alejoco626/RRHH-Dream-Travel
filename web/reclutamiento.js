@@ -38,8 +38,17 @@ async function paginaCandidatos(m, ctx) {
     h("div", { class: "cuerpo" }, h("div", { class: "lista tarjeta" }, h("div", { class: "barra" }, busca, selGrupo, total), tabla), detalle));
 
   async function cargarJson() {
-    const r = await intentar(() => llamar("datos_cargar")); if (!r) return;
-    toast(r.mensaje); pagina.refrescar(); ctx.insignias && ctx.insignias();
+    const e = await intentar(() => llamar("datos_elegir")); if (!e) return;
+    let modo = "agregar";
+    if (e.cambian) {
+      modo = await modal("Cargar datos", h("div", {}, h("p", {}, `El archivo trae ${e.candidatos} candidatos nuevos y ${e.programacion} actividades nuevas.`),
+        h("p", {}, `Además, ${e.cambian} candidatos que ya están en la app tienen datos distintos (estado, observaciones, evaluación…).`),
+        h("p", { class: "tenue" }, "Si actualizas, lo del archivo reemplaza lo que ya estaba en esos campos. Se crea un respaldo antes.")),
+        [{ texto: "Cancelar", valor: false }, { texto: "Solo agregar nuevos", valor: "agregar" }, { texto: "Agregar y actualizar", tipo: "pri", valor: "actualizar" }]);
+      if (!modo) return;
+    }
+    const r = await intentar(() => llamar("datos_aplicar", e.ruta, modo === "actualizar")); if (!r) return;
+    toast(r.mensaje); pagina.refrescar();
   }
   async function exportarJson() { const r = await intentar(() => llamar("datos_exportar")); if (r) toast(r.mensaje); }
 

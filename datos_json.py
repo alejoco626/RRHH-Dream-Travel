@@ -89,8 +89,9 @@ def _limpio_candidato(c):
     return d
 
 
-def importar(ruta, respaldar=True):
-    """Carga el archivo. Devuelve {'candidatos': n, 'programacion': n, 'omitidos': n, ...}."""
+def importar(ruta, respaldar=True, actualizar=False, simular=False):
+    """Carga el archivo. Con actualizar=True también corrige a los que ya existen con lo que diga
+    el archivo (solo campos con valor); con simular=True no cambia nada y solo cuenta. Devuelve {'candidatos': n, 'programacion': n, 'omitidos': n, ...}."""
     datos = leer(ruta)
     cands = [_limpio_candidato(c) for c in datos.get("candidatos", [])]
     prog = datos.get("programacion", [])
@@ -99,10 +100,18 @@ def importar(ruta, respaldar=True):
         existentes[sel.clave_candidato(c["nombre"], c["telefono"], c["correo"])] = c
         existentes.setdefault("nom:" + sel.clave_nombre(c["nombre"]), c)
     por_ver = {(p["fecha_inicio"], sel.clave_nombre(p["actividad"])) for p in bd.listar("programacion")}
-    nuevos_c = []
+    nuevos_c, cambios_c = [], []
     for c in cands:  # también evita repetidos dentro del mismo archivo
         k, kn = sel.clave_candidato(c["nombre"], c["telefono"], c["correo"]), "nom:" + sel.clave_nombre(c["nombre"])
-        if k in existentes or kn in existentes:
+        previo = existentes.get(k) or existentes.get(kn)
+        if previo is not None:
+            if previo.get("id") is not None and not previo.get("_visto"):
+                dif = {f: c[f] for f in bd.COLUMNAS["candidatos"]
+                       if f != "nombre" and c.get(f) not in (None, "")
+                       and (previo.get(f) or "") != c[f]}
+                previo["_visto"] = True
+                if dif:
+                    cambios_c.append((previo["id"], dif))
             continue
         existentes[k] = existentes[kn] = c
         nuevos_c.append(c)
@@ -125,10 +134,17 @@ def importar(ruta, respaldar=True):
                          "convocatoria": _texto(p.get("convocatoria"))})
     antes = bd.leer_config("parametros_seleccion")
     parametros = datos.get("parametros") or {}
-    if (nuevos_c or nuevos_p or (parametros and not antes) or datos.get("calendario")) and respaldar:
+    if simular:
+        return {"candidatos": len(nuevos_c), "programacion": len(nuevos_p),
+                "cambian": len(cambios_c)}
+    if (nuevos_c or nuevos_p or (actualizar and cambios_c) or (parametros and not antes)
+            or datos.get("calendario")) and respaldar:
         ruta_zip = os.path.join(respaldos.carpeta_respaldos(),
                                 respaldos.nombre_nuevo("RRHH_antes_de_cargar_"))
         respaldos.crear_respaldo(ruta_zip)
+    if actualizar:
+        for id_c, dif in cambios_c:
+            bd.guardar("candidatos", dif, id_c)
     bd.insertar_varios("candidatos", nuevos_c)
     bd.insertar_varios("programacion", nuevos_p)
     if parametros and not antes:
@@ -142,6 +158,7 @@ def importar(ruta, respaldar=True):
                                          "etiquetas": m.get("etiquetas", {})})
         bd.guardar_config("calendario_notas", json.dumps(previo, ensure_ascii=False))
     return {"candidatos": len(nuevos_c), "programacion": len(nuevos_p),
+            "actualizados": len(cambios_c) if actualizar else 0, "cambian": len(cambios_c),
             "omitidos": (len(cands) - len(nuevos_c)) + (len(prog) - len(nuevos_p))}
 
 

@@ -1122,6 +1122,28 @@ class PruebasSeleccion(PruebasBase):
             with self.assertRaises(ValueError):
                 dj.leer(ruta)
 
+    def test_json_actualiza_existentes_solo_si_se_pide(self):
+        import json
+        import datos_json as dj
+        base = {"formato": dj.FORMATO, "programacion": [], "candidatos": [
+            {"nombre": "Luis Paz", "telefono": "5555 9999", "estado": "En evaluación", "observaciones": "uno"}]}
+        nuevo = {"formato": dj.FORMATO, "programacion": [], "candidatos": [
+            {"nombre": "Luis Paz", "telefono": "5555 9999", "estado": "Descartado", "observaciones": ""},
+            {"nombre": "Eva Ruiz", "telefono": "5555 1111", "estado": "Nuevo"}]}
+        with tempfile.TemporaryDirectory() as t:
+            r1, r2 = os.path.join(t, "a.json"), os.path.join(t, "b.json")
+            json.dump(base, open(r1, "w", encoding="utf-8")); json.dump(nuevo, open(r2, "w", encoding="utf-8"))
+            dj.importar(r1, respaldar=False)
+            v = dj.importar(r2, actualizar=True, simular=True)
+            self.assertEqual((v["candidatos"], v["cambian"]), (1, 1))
+            self.assertEqual(len(bd.listar("candidatos")), 1)  # simular no cambia nada
+            dj.importar(r2, respaldar=False)  # solo agregar
+            self.assertEqual([c["estado"] for c in bd.listar("candidatos") if c["nombre"] == "Luis Paz"], ["En evaluación"])
+            r = dj.importar(r2, respaldar=False, actualizar=True)
+            luis = [c for c in bd.listar("candidatos") if c["nombre"] == "Luis Paz"][0]
+            self.assertEqual((luis["estado"], luis["observaciones"]), ("Descartado", "uno"))  # vacío no borra
+            self.assertEqual(r["actualizados"], 1)
+
     def test_api_candidatos_evaluacion_y_programacion(self):
         import api
         a = api.Api()
