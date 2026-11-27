@@ -16,6 +16,9 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.5": {
+        "correcciones": ["La actualización automática ya no se cierra sola a mitad de camino: el instalador cierra la app sin cerrarse a sí mismo"],
+    },
     "1.4.4": {
         "correcciones": ["Al actualizar, la app se cierra sola y el instalador ya no necesita que cierres RRHH.exe a mano"],
     },

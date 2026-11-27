@@ -57,8 +57,8 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Codigo: Integer;
 begin
-  { Si la app sigue abierta, se cierra para poder reemplazar RRHH.exe (si no está abierta, no pasa nada). }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM RRHH.exe', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  { Si la app sigue abierta, se cierra para poder reemplazar RRHH.exe. Sin /T: el instalador lo lanza la propia app y es su proceso hijo, no debe cerrarse a sí mismo. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM RRHH.exe', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
   Sleep(800);
   Result := '';
 end;
