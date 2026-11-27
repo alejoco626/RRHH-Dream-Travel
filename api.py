@@ -1780,10 +1780,11 @@ class Api:
     @seguro
     def datos_aplicar(self, ruta, actualizar=False):
         r = datos_json.importar(ruta, actualizar=bool(actualizar))
-        txt = f"Se agregaron {r['candidatos']} candidatos y {r['programacion']} actividades"
+        txt = f"Se agregaron {r['candidatos']} candidatos, {r['programacion']} actividades y {r['historial']} entradas de historial"
         if actualizar:
             txt += f"; se actualizaron {r['actualizados']} que ya estaban"
-        return {"mensaje": txt + ".", **r}
+        return {"mensaje": txt + ".", "verificacion": datos_json.verificar(ruta),
+                "version": version.VERSION, "carpeta": bd.CARPETA_DATOS, **r}
 
     @seguro
     def datos_exportar(self):
@@ -1803,8 +1804,9 @@ class Api:
     @seguro
     def datos_estado(self):
         """Cuántos candidatos hay y en qué carpetas busca la app el archivo de datos."""
-        return {"candidatos": len(bd.listar("candidatos")),
-                "carpetas": [c for c in datos_json.carpetas_importacion() if os.path.isdir(c)]}
+        return {"candidatos": len(bd.listar("candidatos")), "version": version.VERSION,
+                "historial": len(bd._consultar("SELECT id FROM historial")),
+                "datos": bd.CARPETA_DATOS, "carpetas": [c for c in datos_json.carpetas_importacion() if os.path.isdir(c)]}
 
     @seguro
     def guardar_umbrales(self, umbral_a, umbral_b):

@@ -72,7 +72,15 @@ async function paginaCandidatos(m, ctx) {
       if (!modo) return;
     }
     const r = await intentar(() => llamar("datos_aplicar", e.ruta, modo === "actualizar")); if (!r) return;
-    toast(r.mensaje); pagina.refrescar();
+    const v = r.verificacion;
+    if (v.faltan_candidatos || v.faltan_historial) {
+      await modal("La carga quedó incompleta", h("div", {}, h("p", {}, `El archivo trae ${v.candidatos_archivo} candidatos y ${v.historial_archivo} entradas de historial. La app tiene ${v.candidatos_app} candidatos y ${v.historial_app} entradas de historial.`),
+        h("p", {}, `Faltan ${v.faltan_candidatos} candidatos y ${v.faltan_historial} entradas de historial.`),
+        h("p", { class: "tenue" }, `Versión ${r.version} · datos en ${r.carpeta}. Mándale una captura de esta ventana a quien te ayuda.`)), [{ texto: "Cerrar", tipo: "pri", valor: true }]);
+    } else {
+      toast(`${r.mensaje} Ahora hay ${v.candidatos_app} candidatos y ${v.historial_app} entradas de historial.`);
+    }
+    pagina.refrescar();
   }
   async function exportarJson() { const r = await intentar(() => llamar("datos_exportar")); if (r) toast(r.mensaje); }
 
@@ -310,7 +318,7 @@ async function paginaReagendas(m, ctx) {
     const q = est.buscar.trim().toLowerCase();
     const filas = r.filas.filter((f) => OK[est.filtro].includes(f.reagendas.nivel) && (!q || f.nombre.toLowerCase().includes(q)));
     total.textContent = `${filas.length} de ${r.personas} personas`;
-    if (!filas.length) { cuerpo.replaceChildren(sinFilas(r.filas.length ? "Nadie coincide con el filtro." : "Aún no hay reagendas ni postulaciones repetidas.")); return; }
+    if (!filas.length) { cuerpo.replaceChildren(r.filas.length ? sinFilas("Nadie coincide con el filtro.") : h("div", { class: "vacio" }, h("p", {}, "Aún no hay reagendas ni postulaciones repetidas."), h("p", { class: "tenue" }, "Si ya cargaste el archivo y esto sigue vacío, ve a Candidatos y usa «Cargar datos (JSON)»; al terminar te dirá qué faltó."))); return; }
     const cuerpoTabla = [];
     filas.forEach((f) => {
       const abierto = est.abierto === f.id;

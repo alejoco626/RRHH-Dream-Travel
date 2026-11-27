@@ -16,6 +16,10 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.3": {
+        "nuevo": ["Al cargar un archivo de datos, la app compara lo que trae con lo que tiene y avisa si algo quedó sin cargar"],
+        "cambios": ["El mensaje de carga ahora incluye las entradas de historial y los totales que quedaron en la app"],
+    },
     "1.4.2": {
         "cambios": ["La carga automática reconoce el archivo de datos aunque tenga otro nombre (WhatsApp, correo, «(1)»…)"],
         "correcciones": ["Si no hay datos, la app lo avisa y ofrece el botón «Cargar datos (JSON)» en lugar de quedar en blanco"],

@@ -214,6 +214,32 @@ def importar(ruta, respaldar=True, actualizar=False, simular=False):
             "historial": n_hist}
 
 
+def verificar(ruta):
+    """Compara lo que trae el archivo con lo que hay en la app (para detectar cargas incompletas)."""
+    datos = leer(ruta)
+    cands = [_limpio_candidato(c) for c in datos.get("candidatos", [])]
+    en_app = {}
+    for c in bd.listar("candidatos"):
+        en_app[sel.clave_candidato(c["nombre"], c["telefono"], c["correo"])] = c
+        en_app.setdefault("nom:" + sel.clave_nombre(c["nombre"]), c)
+    sin_candidato = sin_historial = hist_archivo = 0
+    for c in cands:
+        hist_archivo += len(c["_historial"])
+        previo = en_app.get(sel.clave_candidato(c["nombre"], c["telefono"], c["correo"])) \
+            or en_app.get("nom:" + sel.clave_nombre(c["nombre"]))
+        if previo is None:
+            sin_candidato += 1
+            sin_historial += len(c["_historial"])
+            continue
+        ya = {_clave_hist(h) for h in bd.historial_de(previo["id"])}
+        sin_historial += sum(1 for h in c["_historial"] if _clave_hist(h) not in ya)
+    return {"candidatos_archivo": len(cands), "historial_archivo": hist_archivo,
+            "candidatos_app": len(bd.listar("candidatos")),
+            "historial_app": len(bd._consultar("SELECT id FROM historial")),
+            "faltan_candidatos": sin_candidato, "faltan_historial": sin_historial,
+            "calendario_archivo": len(datos.get("calendario") or [])}
+
+
 def cargar_automaticamente():
     """Carga los archivos nuevos de las carpetas de importación. Nunca lanza error."""
     resultado = []
