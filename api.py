@@ -1336,6 +1336,10 @@ class Api:
             return {"ok": False, "mensaje": f"No se pudo instalar la actualización.\n{error}"}
         if self._ventana is not None:
             threading.Timer(0.2, self._ventana.destroy).start()
+        # El instalador necesita el .exe libre: si algo mantiene vivo el proceso, se termina a la fuerza.
+        cierre = threading.Timer(2.0, lambda: os._exit(0))
+        cierre.daemon = True
+        cierre.start()
         return {"ok": True}
 
     @seguro

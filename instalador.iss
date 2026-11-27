@@ -52,3 +52,13 @@ begin
   SetEnvironmentVariable('PYINSTALLER_RESET_ENVIRONMENT', '1');
   Result := True;
 end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Codigo: Integer;
+begin
+  { Si la app sigue abierta, se cierra para poder reemplazar RRHH.exe (si no está abierta, no pasa nada). }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM RRHH.exe', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  Sleep(800);
+  Result := '';
+end;

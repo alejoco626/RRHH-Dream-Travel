@@ -16,6 +16,9 @@ SECCIONES = (
 )
 
 NOVEDADES = {
+    "1.4.4": {
+        "correcciones": ["Al actualizar, la app se cierra sola y el instalador ya no necesita que cierres RRHH.exe a mano"],
+    },
     "1.4.3": {
         "nuevo": ["Al cargar un archivo de datos, la app compara lo que trae con lo que tiene y avisa si algo quedó sin cargar"],
         "cambios": ["El mensaje de carga ahora incluye las entradas de historial y los totales que quedaron en la app"],
